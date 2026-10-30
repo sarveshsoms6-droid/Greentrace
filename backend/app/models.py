@@ -55,7 +55,7 @@ class TreeDetectionResponse(BaseModel):
 
 class ActivityCreate(BaseModel):
     activity_id: str = Field(..., min_length=3, max_length=100)
-    submitter_address: str = Field(..., min_length=30, max_length=40)
+    submitter_address: str = Field(..., min_length=10, max_length=100)
     category: str
     quantity: float = Field(..., gt=0)
     unit: str
@@ -103,7 +103,7 @@ class ActivityResponse(BaseModel):
 
 class DecisionRecordRequest(BaseModel):
     decision: str = Field(..., pattern="^(APPROVED|REJECTED)$")
-    approver_address: str = Field(..., min_length=30, max_length=40)
+    approver_address: str = Field(..., min_length=10, max_length=100)
     approval_tx_hash: Optional[str] = None
     rejection_reason: Optional[str] = None
 
@@ -132,7 +132,7 @@ class TransactionRecordRequest(BaseModel):
     activity_id: str = Field(..., min_length=3, max_length=100)
     tx_hash: str = Field(..., min_length=10, max_length=100)
     tx_type: str = Field(..., pattern="^(SUBMISSION|APPROVAL|REJECTION)$")
-    wallet_address: str = Field(..., min_length=30, max_length=40)
+    wallet_address: str = Field(..., min_length=10, max_length=100)
     confirmation_status: str = Field("CONFIRMED", pattern="^(PENDING|CONFIRMED|FAILED)$")
     block_level: Optional[int] = None
     error_message: Optional[str] = None
@@ -257,3 +257,42 @@ class PublicVerificationResponse(BaseModel):
         "the physical activity occurred."
     )
     details: Optional[str] = None
+
+
+# =====================================================================
+# Authentication & User Management Models
+# =====================================================================
+
+class UserSignUpRequest(BaseModel):
+    email: str = Field(..., min_length=5, max_length=255)
+    name: str = Field(..., min_length=2, max_length=100)
+    password: str = Field(..., min_length=6, max_length=128)
+    role: str = Field(..., pattern="^(STUDENT|ORGANIZER)$")
+    student_id: Optional[str] = None
+    department: Optional[str] = None
+    wallet_address: Optional[str] = None
+
+
+class UserLoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: int
+    email: str
+    name: str
+    role: str
+    student_id: Optional[str] = None
+    department: Optional[str] = None
+    wallet_address: Optional[str] = None
+    created_at: str
+    last_login: Optional[str] = None
+
+
+class AuthResponse(BaseModel):
+    success: bool = True
+    message: str
+    user: UserResponse
+    token: str
+

@@ -12,18 +12,18 @@ import {
   XCircle,
   QrCode,
   Eye,
-  Sparkles,
   Zap,
   ExternalLink,
   History,
   RefreshCw,
   AlertCircle,
   User,
+  Trees,
 } from 'lucide-react';
 import type { ActivityStatus } from '../types';
 
 export const StudentDashboard: React.FC = () => {
-  const { wallet } = useWallet();
+  const { wallet, activities: localActivities } = useWallet();
   const [filter, setFilter] = useState<'ALL' | ActivityStatus>('ALL');
   const [studentActivities, setStudentActivities] = useState<ActivityApiResponse[]>([]);
   const [stats, setStats] = useState<ActivityStatsApiResponse>({
@@ -47,20 +47,82 @@ export const StudentDashboard: React.FC = () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      // Fetch only this student's real activities from backend SQLite
-      const [activitiesData, statsData] = await Promise.all([
-        api.getActivities({ submitter_address: wallet.address }),
-        api.getActivityStats(wallet.address),
-      ]);
-      setStudentActivities(activitiesData);
-      setStats(statsData);
+      // Fetch only this student's real activities from backend
+      let activitiesData: ActivityApiResponse[] = [];
+      let statsData: ActivityStatsApiResponse = { total: 0, approved: 0, pending: 0, rejected: 0, impacts: [] };
+
+      try {
+        const [aData, sData] = await Promise.all([
+          api.getActivities({ submitter_address: wallet.address }),
+          api.getActivityStats(wallet.address),
+        ]);
+        activitiesData = aData;
+        statsData = sData;
+      } catch (apiErr) {
+        console.warn('Backend student data fetch notice:', apiErr);
+      }
+
+      // Merge any local submissions from this wallet that haven't yet synced
+      const dataIds = new Set(activitiesData.map((d) => d.activity_id));
+      const pendingLocal: ActivityApiResponse[] = localActivities
+        .filter((a) => {
+          if (a.is_sample) return false;
+          if (dataIds.has(a.activity_id)) return false;
+          if (wallet.address && a.submitter_address.toLowerCase() !== wallet.address.toLowerCase()) return false;
+          return true;
+        })
+        .map((local) => ({
+          activity_id: local.activity_id,
+          submitter_address: local.submitter_address,
+          category: local.category,
+          quantity: local.quantity,
+          unit: local.unit,
+          description: local.description,
+          evidence_hash: local.evidence_hash,
+          evidence_path: undefined,
+          status_cache: local.status,
+          submission_tx_hash: local.submission_tx_hash,
+          approval_tx_hash: local.approval_tx_hash,
+          rejection_tx_hash: undefined,
+          approver_address: local.approver_address,
+          submitted_at: local.submitted_at,
+          approved_at: local.approved_at,
+          rejected_at: undefined,
+          rejection_reason: local.rejection_reason,
+          blockchain_confirmed: local.submission_tx_hash ? 1 : 0,
+          reconciled_at: undefined,
+          ai_detected_count: local.ai_detected_count,
+          ai_confidence_score: local.ai_confidence_score,
+          ai_model_name: local.ai_model_name,
+          ai_model_version: local.ai_model_version,
+          ai_annotated_path: local.ai_annotated_path,
+        }));
+
+      const combinedActivities = [...activitiesData, ...pendingLocal];
+      setStudentActivities(combinedActivities);
+
+      // If stats are empty but local activities exist, compute baseline stats
+      if (statsData.total === 0 && combinedActivities.length > 0) {
+        const approvedCount = combinedActivities.filter((a) => a.status_cache === 'APPROVED').length;
+        const pendingCount = combinedActivities.filter((a) => a.status_cache === 'SUBMITTED').length;
+        const rejectedCount = combinedActivities.filter((a) => a.status_cache === 'REJECTED').length;
+        setStats({
+          total: combinedActivities.length,
+          approved: approvedCount,
+          pending: pendingCount,
+          rejected: rejectedCount,
+          impacts: statsData.impacts,
+        });
+      } else {
+        setStats(statsData);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load student activity records.';
       setErrorMessage(msg);
     } finally {
       setIsLoading(false);
     }
-  }, [wallet.isConnected, wallet.address]);
+  }, [wallet.isConnected, wallet.address, localActivities]);
 
   useEffect(() => {
     fetchStudentData();
@@ -90,306 +152,395 @@ export const StudentDashboard: React.FC = () => {
     .reduce((sum, i) => sum + i.total_qty, 0);
 
   return (
-    <div className="space-y-8 pb-16">
-      {/* Header with Title and CTAs */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 dark:border-slate-800 pb-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-              {wallet.userName ? `${wallet.userName}'s Dashboard` : 'Student Dashboard'}
-            </h1>
-            <span className="text-[11px] bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-mono font-medium">
-              ROLE: STUDENT
+    <div className="space-y-10 pb-20">
+      {/* Editorial Masthead Dispatch */}
+      <div className="border-b border-stone-300 dark:border-stone-800 pb-8 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-xs font-mono-code text-stone-500 dark:text-stone-400">
+          <div className="flex items-center gap-3">
+            <span className="stamp-badge border-stone-400 dark:border-stone-700 text-stone-800 dark:text-stone-300">
+              CADRE FOLIO 2026.IV
             </span>
+            <span className="hidden sm:inline">// STUDENT RESEARCH CADRE DESK</span>
           </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Student Account:{' '}
-            {wallet.isConnected && wallet.address ? (
-              <span className="font-mono text-emerald-600 dark:text-emerald-400 font-medium">
-                {wallet.address} ({truncateAddress(wallet.address, 8, 6)})
-              </span>
-            ) : (
-              <span className="text-amber-500">Not Connected — Sign in or create a student account below</span>
-            )}
-          </p>
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span>CHRONICLE STATUS: SYNCHRONIZED</span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={fetchStudentData}
-            disabled={isLoading || !wallet.isConnected}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-colors disabled:opacity-50"
-            title="Refresh student submissions"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-500' : ''}`} />
-            <span>Refresh</span>
-          </button>
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 pt-2">
+          <div className="space-y-2 max-w-3xl">
+            <h1 className="font-serif-editorial text-4xl sm:text-5xl font-normal tracking-tight text-stone-900 dark:text-stone-100">
+              {wallet.userName ? `${wallet.userName}'s` : 'Student'}{' '}
+              <span className="italic font-normal">Ecological Ledger.</span>
+            </h1>
+            <p className="text-base sm:text-lg text-stone-600 dark:text-stone-400 leading-relaxed font-sans font-light">
+              Personal empirical repository and verification history. All filed evidence is fingerprinted with
+              SHA-256 digests and subject to faculty council ratification before immutable on-chain inscription.
+            </p>
+          </div>
 
-          <Link
-            to="/history?mine=true"
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold border border-slate-200 dark:border-slate-700 transition-colors"
-          >
-            <History className="w-3.5 h-3.5 text-teal-500" />
-            <span>All My Submissions</span>
-          </Link>
+          {/* Action Hub */}
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <button
+              onClick={fetchStudentData}
+              disabled={isLoading || !wallet.isConnected}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-stone-900 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-200 text-xs font-mono-code font-semibold border border-stone-300 dark:border-stone-800 transition-colors disabled:opacity-50"
+              title="Refresh student submissions"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
+              <span>[ ↻ REFRESH ]</span>
+            </button>
 
-          <Link
-            to="/submit"
-            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 transition-all hover:scale-102"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Submit New Activity</span>
-          </Link>
+            <Link
+              to="/history?mine=true"
+              className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-lg bg-stone-100 hover:bg-stone-200 dark:bg-stone-900 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-200 text-xs font-mono-code font-semibold border border-stone-300 dark:border-stone-800 transition-colors"
+            >
+              <History className="w-3.5 h-3.5 text-stone-600 dark:text-stone-400" />
+              <span>[ 01 // AUDIT REGISTER ]</span>
+            </Link>
+
+            <Link
+              to="/submit"
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg bg-stone-900 hover:bg-black dark:bg-stone-100 dark:hover:bg-white text-white dark:text-stone-950 font-mono-code font-bold text-xs uppercase tracking-wider transition-all shadow-sm"
+            >
+              <PlusCircle className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
+              <span>[ DEPOSIT NEW EVIDENCE ]</span>
+            </Link>
+          </div>
+        </div>
+
+        {/* Cadre Identity Dossier Strip */}
+        <div className="pt-4 flex flex-wrap items-center justify-between gap-4 text-xs font-mono-code bg-stone-100/70 dark:bg-stone-900/50 p-3.5 rounded-lg border border-stone-300 dark:border-stone-800">
+          <div className="flex items-center gap-2">
+            <span className="text-stone-500 uppercase tracking-wider">REGISTERED IDENTITY:</span>
+            {wallet.isConnected && wallet.address ? (
+              <span className="font-bold text-stone-900 dark:text-stone-100">
+                {wallet.userName || 'Enrolled Student'} ({truncateAddress(wallet.address, 10, 8)})
+              </span>
+            ) : (
+              <span className="text-amber-700 dark:text-amber-400 font-bold">
+                Cadre Disconnected — Sign in to view your ledger
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-4 text-stone-500">
+            <span>PROTOCOL: TEZOS MAINNET SHADOW</span>
+            <span className="hidden md:inline">//</span>
+            <span className="hidden md:inline">COGNITION: YOLOV8 INTEGRATED</span>
+          </div>
         </div>
       </div>
 
       {/* Organizer Context Banner if active role is Organizer */}
       {wallet.role === 'ORGANIZER' && (
-        <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 flex items-center justify-between gap-4">
-          <div className="text-xs text-indigo-700 dark:text-indigo-300">
-            <strong>Logged in as Organizer:</strong> You are currently viewing the Student personal submissions view.
+        <div className="p-4 rounded-lg bg-stone-100 dark:bg-stone-900/90 border-l-4 border-l-stone-800 dark:border-l-stone-200 border border-stone-300 dark:border-stone-800 flex items-center justify-between gap-4 font-mono-code text-xs">
+          <div className="text-stone-800 dark:text-stone-200">
+            <strong className="uppercase">[ COUNCIL CONTEXT ]:</strong> You are currently viewing the individual Student
+            deposit register.
           </div>
           <Link
             to="/organizer"
-            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+            className="font-bold px-3 py-1.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 transition-colors uppercase tracking-wider text-[11px]"
           >
-            Go to Organizer Review Queue →
+            Council Ratification Chamber →
           </Link>
         </div>
       )}
 
       {/* Account Login Prompt if Disconnected */}
       {!wallet.isConnected && (
-        <div className="p-6 rounded-2xl bg-white dark:bg-gradient-to-r dark:from-emerald-950/40 dark:to-slate-900 border border-emerald-500/30 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-md">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
-              <User className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-white text-sm">Student Account Not Connected</h3>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                Sign in to view your verified activities and personal impact badges.
-              </p>
-            </div>
+        <div className="p-8 rounded-lg bg-stone-50 dark:bg-stone-900 border border-stone-300 dark:border-stone-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6 shadow-sm">
+          <div className="space-y-1">
+            <span className="stamp-badge border-amber-600 text-amber-700 dark:text-amber-400">
+              AUTHENTICATION REQUIRED
+            </span>
+            <h3 className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100 pt-1">
+              Field Submissions Restricted
+            </h3>
+            <p className="text-sm text-stone-600 dark:text-stone-400">
+              Sign in with your enrolled student cadre credentials or connect an institutional wallet to access your
+              certified impact ledger.
+            </p>
           </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Link
-              to="/login"
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs shadow-md shadow-emerald-500/20 transition-all shrink-0"
-            >
-              <User className="w-4 h-4" />
-              <span>Login / Create Student Account</span>
-            </Link>
-          </div>
+          <Link
+            to="/login"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-stone-900 hover:bg-black dark:bg-stone-100 dark:hover:bg-white text-white dark:text-stone-950 font-mono-code font-bold text-xs uppercase tracking-wider shrink-0 transition-all shadow-sm"
+          >
+            <User className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
+            <span>[ AUTHENTICATE CADRE ACCOUNT ]</span>
+          </Link>
         </div>
       )}
 
       {/* Error Message */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-800 dark:text-rose-300 text-xs flex items-center justify-between">
+        <div className="p-4 rounded-lg bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs font-mono-code flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-500 shrink-0" />
-            <span>{errorMessage}</span>
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>ERR // {errorMessage}</span>
           </div>
-          <button onClick={fetchStudentData} className="underline text-rose-700 dark:text-rose-200 hover:text-rose-900">
-            Retry
+          <button onClick={fetchStudentData} className="underline hover:text-rose-950 dark:hover:text-rose-100 uppercase">
+            Retry Sync
           </button>
         </div>
       )}
 
-      {/* KPI Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span>Approved Actions</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+      {/* KPI Stats Grid: Archival Ledger Blocks */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Block 01 */}
+        <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-900/60 border border-stone-300 dark:border-stone-800 space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs font-mono-code text-stone-500 uppercase tracking-widest">
+            <span>[ METRIC 01 ]</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">{stats.approved}</div>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">Verified on-chain</p>
+          <div className="pt-2">
+            <div className="font-serif-editorial text-4xl sm:text-5xl font-normal text-stone-900 dark:text-stone-100">
+              {stats.approved}
+            </div>
+            <div className="text-xs font-mono-code uppercase tracking-wider text-stone-600 dark:text-stone-400 pt-1">
+              Ratified Actions
+            </div>
+          </div>
+          <p className="text-[11px] font-mono-code text-emerald-700 dark:text-emerald-400 pt-2 border-t border-stone-200 dark:border-stone-800">
+            Immutable on-chain consensus
+          </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span>Pending Review</span>
-            <Clock className="w-4 h-4 text-amber-500" />
+        {/* Block 02 */}
+        <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-900/60 border border-stone-300 dark:border-stone-800 space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs font-mono-code text-stone-500 uppercase tracking-widest">
+            <span>[ METRIC 02 ]</span>
+            <Clock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">{stats.pending}</div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">{stats.rejected} rejected</p>
+          <div className="pt-2">
+            <div className="font-serif-editorial text-4xl sm:text-5xl font-normal text-stone-900 dark:text-stone-100">
+              {stats.pending}
+            </div>
+            <div className="text-xs font-mono-code uppercase tracking-wider text-stone-600 dark:text-stone-400 pt-1">
+              Under Adjudication
+            </div>
+          </div>
+          <p className="text-[11px] font-mono-code text-stone-500 pt-2 border-t border-stone-200 dark:border-stone-800">
+            {stats.rejected} rejected / returned
+          </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span>Trees Planted</span>
-            <Sparkles className="w-4 h-4 text-teal-500" />
+        {/* Block 03 */}
+        <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-900/60 border border-stone-300 dark:border-stone-800 space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs font-mono-code text-stone-500 uppercase tracking-widest">
+            <span>[ METRIC 03 ]</span>
+            <Trees className="w-4 h-4 text-teal-600 dark:text-teal-400" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">{totalTrees} saplings</div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{totalWasteSorted} kg waste sorted</p>
+          <div className="pt-2">
+            <div className="font-serif-editorial text-4xl sm:text-5xl font-normal text-stone-900 dark:text-stone-100">
+              {totalTrees}
+            </div>
+            <div className="text-xs font-mono-code uppercase tracking-wider text-stone-600 dark:text-stone-400 pt-1">
+              Saplings Inscribed
+            </div>
+          </div>
+          <p className="text-[11px] font-mono-code text-stone-500 pt-2 border-t border-stone-200 dark:border-stone-800">
+            {totalWasteSorted} kg waste diverted
+          </p>
         </div>
 
-        <div className="p-5 rounded-2xl bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 space-y-1 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
-            <span>Resource Savings</span>
-            <Zap className="w-4 h-4 text-cyan-500" />
+        {/* Block 04 */}
+        <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-900/60 border border-stone-300 dark:border-stone-800 space-y-2 relative overflow-hidden group">
+          <div className="flex items-center justify-between text-xs font-mono-code text-stone-500 uppercase tracking-widest">
+            <span>[ METRIC 04 ]</span>
+            <Zap className="w-4 h-4 text-stone-700 dark:text-stone-300" />
           </div>
-          <div className="text-2xl font-bold text-slate-900 dark:text-white">{totalEnergySaved} kWh</div>
-          <p className="text-[11px] text-slate-500 dark:text-slate-400">{totalWaterSaved} litres water conserved</p>
+          <div className="pt-2">
+            <div className="font-serif-editorial text-4xl sm:text-5xl font-normal text-stone-900 dark:text-stone-100">
+              {totalEnergySaved} <span className="text-lg font-mono-code font-normal">kWh</span>
+            </div>
+            <div className="text-xs font-mono-code uppercase tracking-wider text-stone-600 dark:text-stone-400 pt-1">
+              Energy Abated
+            </div>
+          </div>
+          <p className="text-[11px] font-mono-code text-stone-500 pt-2 border-t border-stone-200 dark:border-stone-800">
+            {totalWaterSaved} litres conserved
+          </p>
         </div>
       </div>
 
-      {/* Table Section */}
-      <div className="space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h2 className="text-lg font-bold text-slate-900 dark:text-white">My Submissions</h2>
-            <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">({filteredActivities.length} total)</span>
+      {/* Table Section: Historical Audit Register */}
+      <div className="space-y-6 pt-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-300 dark:border-stone-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono-code text-xs text-stone-500 uppercase tracking-widest">[ SECTION II ]</span>
+              <h2 className="font-serif-editorial text-2xl font-normal text-stone-900 dark:text-stone-100">
+                Personal Field Deposits Register
+              </h2>
+            </div>
+            <p className="text-xs font-mono-code text-stone-500 mt-1">
+              RECORD COUNT: {filteredActivities.length} OF {studentActivities.length} SPECIMENS
+            </p>
           </div>
 
-          {/* Filter Pills */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-xs">
+          {/* Filter Pills in Editorial Style */}
+          <div className="flex items-center gap-1 p-1 bg-stone-100 dark:bg-stone-900 border border-stone-300 dark:border-stone-800 rounded-lg text-xs font-mono-code">
             <button
               onClick={() => setFilter('ALL')}
-              className={`px-3 py-1 rounded-lg transition-colors font-medium ${
-                filter === 'ALL' ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              className={`px-3 py-1.5 rounded transition-colors uppercase tracking-wider ${
+                filter === 'ALL'
+                  ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-950 font-bold shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100'
               }`}
             >
               All ({studentActivities.length})
             </button>
             <button
               onClick={() => setFilter('APPROVED')}
-              className={`px-3 py-1 rounded-lg transition-colors font-medium ${
-                filter === 'APPROVED' ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:text-emerald-600'
+              className={`px-3 py-1.5 rounded transition-colors uppercase tracking-wider ${
+                filter === 'APPROVED'
+                  ? 'bg-emerald-600 text-white font-bold shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-emerald-600'
               }`}
             >
-              Approved ({stats.approved})
+              Ratified ({stats.approved})
             </button>
             <button
               onClick={() => setFilter('SUBMITTED')}
-              className={`px-3 py-1 rounded-lg transition-colors font-medium ${
-                filter === 'SUBMITTED' ? 'bg-amber-500/20 text-amber-700 dark:text-amber-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:text-amber-600'
+              className={`px-3 py-1.5 rounded transition-colors uppercase tracking-wider ${
+                filter === 'SUBMITTED'
+                  ? 'bg-amber-600 text-white font-bold shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-amber-600'
               }`}
             >
-              Pending ({stats.pending})
+              Auditing ({stats.pending})
             </button>
             <button
               onClick={() => setFilter('REJECTED')}
-              className={`px-3 py-1 rounded-lg transition-colors font-medium ${
-                filter === 'REJECTED' ? 'bg-rose-500/20 text-rose-700 dark:text-rose-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:text-rose-600'
+              className={`px-3 py-1.5 rounded transition-colors uppercase tracking-wider ${
+                filter === 'REJECTED'
+                  ? 'bg-rose-700 text-white font-bold shadow-sm'
+                  : 'text-stone-600 dark:text-stone-400 hover:text-rose-600'
               }`}
             >
-              Rejected ({stats.rejected})
+              Declined ({stats.rejected})
             </button>
           </div>
         </div>
 
         {/* Activities Table */}
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 overflow-hidden shadow-md">
+        <div className="rounded-lg border border-stone-300 dark:border-stone-800 bg-white dark:bg-stone-900/60 overflow-hidden shadow-sm">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm text-slate-700 dark:text-slate-300">
-              <thead className="bg-slate-50 dark:bg-slate-950/80 text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left text-sm text-stone-700 dark:text-stone-300">
+              <thead className="bg-stone-100 dark:bg-stone-950/80 text-[11px] font-mono-code uppercase tracking-wider text-stone-600 dark:text-stone-400 border-b border-stone-300 dark:border-stone-800">
                 <tr>
-                  <th className="py-3.5 px-4">Activity ID</th>
-                  <th className="py-3.5 px-4">Category & Quantity</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4">Submitted At</th>
-                  <th className="py-3.5 px-4">Transaction Reference</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                  <th className="py-4 px-4 font-semibold">Folio Index</th>
+                  <th className="py-4 px-4 font-semibold">Environmental Action</th>
+                  <th className="py-4 px-4 font-semibold">Consensus Verdict</th>
+                  <th className="py-4 px-4 font-semibold">Date Inscribed</th>
+                  <th className="py-4 px-4 font-semibold">Cryptographic Tx</th>
+                  <th className="py-4 px-4 font-semibold text-right">Dossier Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+              <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400">
+                    <td colSpan={6} className="py-16 text-center text-stone-500 font-mono-code">
                       <div className="flex items-center justify-center gap-2">
-                        <RefreshCw className="w-4 h-4 animate-spin text-emerald-500" />
-                        <span>Loading your activity submissions...</span>
+                        <RefreshCw className="w-4 h-4 animate-spin text-stone-800 dark:text-stone-200" />
+                        <span>Querying institutional ledger and cryptographic state...</span>
                       </div>
                     </td>
                   </tr>
                 ) : filteredActivities.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-500 dark:text-slate-400 space-y-2">
-                      <p className="font-semibold text-slate-700 dark:text-slate-300">No activity submissions found.</p>
-                      <p className="text-xs text-slate-500">
+                    <td colSpan={6} className="py-16 text-center text-stone-500 space-y-3">
+                      <p className="font-serif-editorial text-xl text-stone-800 dark:text-stone-200">
+                        No field records matching filter criteria.
+                      </p>
+                      <p className="text-xs font-mono-code text-stone-500">
                         {filter !== 'ALL'
-                          ? `No submissions currently in ${filter} state.`
-                          : 'You have not submitted any sustainability activities yet.'}
+                          ? `No submissions currently in [ ${filter} ] status.`
+                          : 'Your personal cadre register contains zero environmental depositions.'}
                       </p>
                       <Link
                         to="/submit"
-                        className="inline-flex items-center gap-1.5 px-4 py-2 mt-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-xs font-semibold"
+                        className="inline-flex items-center gap-2 px-4 py-2 mt-2 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 font-mono-code text-xs uppercase tracking-wider"
                       >
-                        <PlusCircle className="w-4 h-4" />
-                        <span>Submit your first activity</span>
+                        <PlusCircle className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>[ Deposit First Empirical Record ]</span>
                       </Link>
                     </td>
                   </tr>
                 ) : (
                   filteredActivities.map((act) => (
-                    <tr key={act.activity_id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-medium text-slate-900 dark:text-white">
+                    <tr
+                      key={act.activity_id}
+                      className="hover:bg-stone-50/70 dark:hover:bg-stone-800/40 transition-colors"
+                    >
+                      <td className="py-4 px-4 font-mono-code font-bold text-stone-900 dark:text-stone-100 text-xs">
                         <Link
                           to={`/activity/${act.activity_id}`}
-                          className="hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors flex items-center gap-1"
+                          className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors underline decoration-stone-300 dark:decoration-stone-700 underline-offset-4"
                         >
-                          <span>{act.activity_id}</span>
+                          {act.activity_id}
                         </Link>
                       </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900 dark:text-white">{act.category}</div>
-                        <div className="text-xs text-emerald-600 dark:text-emerald-400 font-mono">
+                      <td className="py-4 px-4">
+                        <div className="font-serif-editorial text-base text-stone-900 dark:text-stone-100">
+                          {act.category}
+                        </div>
+                        <div className="text-xs text-stone-600 dark:text-stone-400 font-mono-code">
                           {act.quantity} {act.unit}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4">
+                      <td className="py-4 px-4">
                         {act.status_cache === 'APPROVED' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/30">
+                          <span className="stamp-badge border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5">
                             <CheckCircle2 className="w-3 h-3" />
-                            Approved
+                            RATIFIED
                           </span>
                         ) : act.status_cache === 'SUBMITTED' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-500/30">
+                          <span className="stamp-badge border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-500/5">
                             <Clock className="w-3 h-3" />
-                            Pending Review
+                            IN AUDIT
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-400 border border-rose-200 dark:border-rose-500/30">
+                          <span className="stamp-badge border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-500/5">
                             <XCircle className="w-3 h-3" />
-                            Rejected
+                            DECLINED
                           </span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-xs text-slate-500 dark:text-slate-400">
+                      <td className="py-4 px-4 text-xs font-mono-code text-stone-600 dark:text-stone-400">
                         {formatTimestamp(act.submitted_at)}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-xs text-slate-500 dark:text-slate-400">
+                      <td className="py-4 px-4 font-mono-code text-xs">
                         {act.submission_tx_hash ? (
                           <a
                             href={`${EXPLORER_URL}/${act.submission_tx_hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-teal-600 dark:text-teal-400 hover:underline inline-flex items-center gap-1"
+                            className="text-stone-700 dark:text-stone-300 hover:text-emerald-600 underline decoration-stone-300 inline-flex items-center gap-1"
                             title={act.submission_tx_hash}
                           >
                             <span>{truncateAddress(act.submission_tx_hash, 8, 4)}</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-3 h-3 text-stone-400" />
                           </a>
                         ) : (
-                          <span className="text-slate-400 dark:text-slate-600">Pending Mining</span>
+                          <span className="text-stone-400 dark:text-stone-600 italic">Off-Chain Cache</span>
                         )}
                       </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
+                      <td className="py-4 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2 font-mono-code">
                           <Link
                             to={`/activity/${act.activity_id}`}
-                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-                            title="View audit details"
+                            className="p-1.5 rounded border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-900 hover:text-white dark:hover:bg-stone-100 dark:hover:text-stone-950 transition-colors"
+                            title="Inspect complete evidentiary dossier"
                           >
                             <Eye className="w-4 h-4" />
                           </Link>
                           <Link
                             to={`/verify?id=${act.activity_id}`}
-                            className="p-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-500/20 transition-colors"
-                            title="Open public QR verification badge"
+                            className="p-1.5 rounded border border-stone-300 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-900 hover:text-white dark:hover:bg-stone-100 dark:hover:text-stone-950 transition-colors"
+                            title="Open public verification certificate"
                           >
                             <QrCode className="w-4 h-4" />
                           </Link>

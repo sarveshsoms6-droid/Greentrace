@@ -77,6 +77,9 @@ export interface WalletState {
   error: string | null;
   isSimulated?: boolean;
   userName?: string;
+  userEmail?: string;
+  studentId?: string;
+  department?: string;
 }
 
 export interface OrganizerPermissionRequest {

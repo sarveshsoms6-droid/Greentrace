@@ -6,20 +6,20 @@ import { CATEGORY_UNITS } from '../types';
 import { calculateFileSHA256, truncateAddress } from '../utils/crypto';
 import { api, ApiError } from '../services/api';
 import { submitActivityOperation, CONTRACT_ADDRESS, formatWalletError } from '../services/tezos';
-import { 
-  Upload, 
-  Hash, 
-  AlertTriangle, 
-  CheckCircle2, 
-  ArrowLeft, 
-  Loader2, 
-  ShieldAlert, 
+import {
+  Upload,
+  Hash,
+  AlertTriangle,
+  CheckCircle2,
+  ArrowLeft,
+  Loader2,
+  ShieldAlert,
   Sparkles,
   Bot,
   Trees,
   Check,
   Eye,
-  Info
+  FileCheck,
 } from 'lucide-react';
 
 export const SubmitActivityPage: React.FC = () => {
@@ -75,13 +75,13 @@ export const SubmitActivityPage: React.FC = () => {
 
     // Validate file type
     if (!file.type.startsWith('image/')) {
-      setErrorMessage('Please upload a valid image file (PNG, JPEG, WebP).');
+      setErrorMessage('Please upload an authentic image file (PNG, JPEG, WebP).');
       return;
     }
 
     // Validate size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('Evidence file size exceeds 10MB limit.');
+      setErrorMessage('Evidence file size exceeds institutional 10MB limit.');
       return;
     }
 
@@ -97,7 +97,7 @@ export const SubmitActivityPage: React.FC = () => {
     setIsHashing(true);
 
     try {
-      // Client-side hash (fast feedback)
+      // Client-side hash (fast cryptographic fingerprint)
       const clientHash = await calculateFileSHA256(file);
       setEvidenceHash(clientHash);
 
@@ -112,7 +112,7 @@ export const SubmitActivityPage: React.FC = () => {
         setDuplicateWarning(localDup);
       }
     } catch {
-      setErrorMessage('Failed to calculate SHA-256 hash for the selected file.');
+      setErrorMessage('Failed to compute SHA-256 digest for selected photograph.');
     } finally {
       setIsHashing(false);
     }
@@ -121,7 +121,7 @@ export const SubmitActivityPage: React.FC = () => {
   // Trigger GreenAI tree detection
   const handleAnalyzeWithGreenAI = async () => {
     if (!evidenceFile) {
-      setAiError('Please select a photograph first to analyze.');
+      setAiError('Please select an evidence photograph first.');
       return;
     }
 
@@ -138,7 +138,7 @@ export const SubmitActivityPage: React.FC = () => {
         setQuantity(String(result.count));
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'AI tree detection failed. Please check backend connection.';
+      const msg = err instanceof Error ? err.message : 'Cognitive vision service unavailable.';
       setAiError(msg);
     } finally {
       setIsAnalyzingAI(false);
@@ -151,60 +151,53 @@ export const SubmitActivityPage: React.FC = () => {
     }
   };
 
+  // Execute full submission lifecycle
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSubmitting) return;
+    setErrorMessage(null);
 
     if (!wallet.isConnected || !wallet.address) {
-      setErrorMessage('Please connect your Tezos wallet before submitting.');
+      setErrorMessage('Enrolled student wallet not connected. Please authenticate first.');
+      return;
+    }
+
+    if (!evidenceFile) {
+      setErrorMessage('An authentic photographic proof is mandatory for deposition.');
+      return;
+    }
+
+    if (!quantity || isNaN(Number(quantity)) || Number(quantity) <= 0) {
+      setErrorMessage('Please state a valid positive numerical quantity.');
+      return;
+    }
+
+    if (duplicateWarning) {
+      setErrorMessage('Duplicate evidence detected. You must submit original, unrecorded field evidence.');
       return;
     }
 
     const numQty = parseFloat(quantity);
-    if (isNaN(numQty) || numQty <= 0) {
-      setErrorMessage('Please enter a valid positive quantity.');
-      return;
-    }
-
-    if (!description.trim() || description.trim().length < 10) {
-      setErrorMessage('Please provide a descriptive explanation (at least 10 characters).');
-      return;
-    }
-
-    if (!evidenceFile || !evidenceHash) {
-      setErrorMessage('Please upload photographic evidence with a calculated SHA-256 hash.');
-      return;
-    }
-
     const finalUnit = category === 'Other' ? customUnit.trim() || 'units' : unit;
 
     setIsSubmitting(true);
-    setErrorMessage(null);
+    setSubmissionStep('Computing SHA-256 digest and uploading evidence to vault...');
+    setUploadProgress('uploading');
 
     try {
-      // Step 1: Upload evidence to backend & verify server-side hash matches client hash
-      setSubmissionStep('Uploading evidence and verifying SHA-256 fingerprint server-side...');
-      setUploadProgress('uploading');
-
+      // Step 1: Upload evidence file and obtain authoritative server hash
       let confirmedHash = evidenceHash;
       try {
         const uploadResult = await api.uploadEvidence(evidenceFile);
-        setUploadProgress('done');
         setServerHash(uploadResult.evidence_hash);
+        setUploadProgress('done');
 
-        // Hash integrity check: client hash must match server hash
-        if (uploadResult.evidence_hash !== evidenceHash) {
-          setUploadProgress('error');
-          setErrorMessage(
-            `Hash mismatch: client computed ${evidenceHash.slice(0, 12)}… but server got ${uploadResult.evidence_hash.slice(0, 12)}…. ` +
-            'The file may have been altered in transit. Please re-select the evidence file.'
-          );
-          return;
+        // Cryptographic integrity check: client hash must equal server hash
+        if (evidenceHash && uploadResult.evidence_hash !== evidenceHash) {
+          throw new Error('Digest mismatch: Client computed SHA-256 does not match server digest.');
         }
 
         confirmedHash = uploadResult.evidence_hash;
 
-        // Show duplicate warning if server detected one
         if (uploadResult.is_duplicate) {
           setDuplicateWarning(true);
           setDuplicateActivityId(uploadResult.existing_activity_id ?? null);
@@ -212,21 +205,21 @@ export const SubmitActivityPage: React.FC = () => {
       } catch (uploadErr) {
         setUploadProgress('error');
         if (uploadErr instanceof ApiError) {
-          setErrorMessage(`Evidence upload failed (${uploadErr.status}): ${uploadErr.detail}`);
+          setErrorMessage(`Evidence vault failure (${uploadErr.status}): ${uploadErr.detail}`);
         } else {
-          setErrorMessage('Evidence upload failed. Backend may be offline — submission cannot continue without server-side verification.');
+          setErrorMessage('Evidence upload failed. Server must confirm cryptographic digest before submission.');
         }
         return;
       }
 
-      // Generate activity record
+      // Generate unique activity folio record
       const uniqueId = `act-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 6)}`;
       const contractTimestamp = new Date().toISOString();
 
       // Step 2: On-chain transaction with connected wallet if contract configured
       let confirmedTxHash: string | undefined = undefined;
       if (CONTRACT_ADDRESS) {
-        setSubmissionStep('Requesting transaction signature in connected Beacon wallet...');
+        setSubmissionStep('Requesting cryptographic signature via Beacon wallet...');
         try {
           confirmedTxHash = await submitActivityOperation({
             activityId: uniqueId,
@@ -240,7 +233,7 @@ export const SubmitActivityPage: React.FC = () => {
           throw new Error(formatWalletError(walletErr));
         }
       } else {
-        setSubmissionStep('Saving to off-chain ledger (Contract pending testnet deployment)...');
+        setSubmissionStep('Recording deposition into off-chain archive...');
       }
 
       const newRecord: ActivityRecord = {
@@ -257,7 +250,6 @@ export const SubmitActivityPage: React.FC = () => {
         activity_date: activityDate,
         submission_tx_hash: confirmedTxHash,
         is_sample: false,
-        // Attach GreenAI detection metadata if tree activity was analyzed
         ai_detected_count: aiResult ? aiResult.count : undefined,
         ai_confidence_score: aiResult ? aiResult.average_confidence : undefined,
         ai_model_name: aiResult ? aiResult.model_name : undefined,
@@ -266,9 +258,10 @@ export const SubmitActivityPage: React.FC = () => {
         ai_detection_data: aiResult ? JSON.stringify(aiResult.detections) : undefined,
       };
 
-      // Persist to SQLite backend database
+      // Persist to off-chain database (Supabase / PostgreSQL)
+      setSubmissionStep('Notarizing activity folio in persistent ledger...');
       try {
-        await api.createActivity({
+        const savedActivity = await api.createActivity({
           activity_id: uniqueId,
           submitter_address: wallet.address,
           category,
@@ -285,14 +278,23 @@ export const SubmitActivityPage: React.FC = () => {
           ai_annotated_path: aiResult ? aiResult.annotated_image_url : undefined,
           ai_detection_data: aiResult ? JSON.stringify(aiResult.detections) : undefined,
         });
-      } catch (dbErr) {
-        console.warn('Backend activity persistence warning:', dbErr);
+        if (savedActivity?.activity_id) {
+          newRecord.activity_id = savedActivity.activity_id;
+        }
+      } catch (dbErr: unknown) {
+        if (dbErr instanceof ApiError) {
+          throw new Error(`Database error (${dbErr.status}): ${dbErr.detail || dbErr.message}`);
+        } else if (dbErr instanceof Error) {
+          throw dbErr;
+        } else {
+          throw new Error('Failed to record activity in backend database.');
+        }
       }
 
       addActivity(newRecord);
       setSuccessRecord(newRecord);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Submission failed. Check network connection or wallet rejection.';
+      const msg = err instanceof Error ? err.message : 'Deposition failed. Verify network connection.';
       setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
@@ -300,62 +302,71 @@ export const SubmitActivityPage: React.FC = () => {
     }
   };
 
+  // Render Post-Deposition Archival Certificate
   if (successRecord) {
     return (
-      <div className="max-w-2xl mx-auto py-8">
-        <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-emerald-500/40 space-y-6 text-center shadow-xl">
-          <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto">
-            <CheckCircle2 className="w-8 h-8" />
+      <div className="max-w-2xl mx-auto py-12 space-y-6">
+        <div className="p-8 sm:p-10 rounded-lg bg-stone-50 dark:bg-stone-900 border border-stone-300 dark:border-stone-800 space-y-6 text-center shadow-lg font-mono-code relative overflow-hidden">
+          <div className="stamp-badge border-emerald-600 text-emerald-700 dark:text-emerald-400 mx-auto">
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            EVIDENTIARY DEPOSITION ACCEPTED
           </div>
 
           <div className="space-y-2">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Activity Submitted & Signed!</h2>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              Your activity has been cryptographically signed and submitted for organizer review.
+            <h2 className="font-serif-editorial text-3xl sm:text-4xl text-stone-900 dark:text-stone-100">
+              Folio Inscribed to Adjudication Docket
+            </h2>
+            <p className="text-xs text-stone-600 dark:text-stone-400 max-w-md mx-auto font-sans">
+              Your field evidence has been fingerprinted with SHA-256 and recorded into the institutional review queue.
+              Final consensus ratification will be issued by the Faculty Council.
             </p>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-left space-y-2 text-xs font-mono">
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Activity ID:</span>
-              <span className="text-slate-900 dark:text-white font-bold">{successRecord.activity_id}</span>
+          <div className="p-5 rounded bg-white dark:bg-stone-950 border border-stone-300 dark:border-stone-800 text-left space-y-2 text-xs">
+            <div className="flex justify-between border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="text-stone-500 uppercase">FOLIO IDENTIFIER:</span>
+              <span className="font-bold text-stone-900 dark:text-stone-100 select-all">{successRecord.activity_id}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Scope:</span>
-              <span className="text-emerald-600 dark:text-emerald-400 font-bold">{successRecord.quantity} {successRecord.unit} ({successRecord.category})</span>
+            <div className="flex justify-between border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="text-stone-500 uppercase">ENVIRONMENTAL ACTION:</span>
+              <span className="font-bold text-stone-900 dark:text-stone-100">
+                {successRecord.quantity} {successRecord.unit} ({successRecord.category})
+              </span>
             </div>
             {successRecord.ai_detected_count !== undefined && (
-              <div className="flex justify-between items-center text-indigo-600 dark:text-indigo-400">
-                <span>GreenAI Detection:</span>
-                <span className="font-bold">{successRecord.ai_detected_count} trees detected ({((successRecord.ai_confidence_score || 0) * 100).toFixed(1)}% conf)</span>
+              <div className="flex justify-between items-center border-b border-stone-200 dark:border-stone-800 pb-2">
+                <span className="text-stone-500 uppercase">GREENAI METROLOGY:</span>
+                <span className="font-bold text-emerald-700 dark:text-emerald-400">
+                  {successRecord.ai_detected_count} trees detected ({((successRecord.ai_confidence_score || 0) * 100).toFixed(1)}% conf)
+                </span>
               </div>
             )}
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">SHA-256 Fingerprint:</span>
-              <span className="text-slate-700 dark:text-slate-300 truncate max-w-[260px]">{successRecord.evidence_hash}</span>
+            <div className="flex justify-between border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="text-stone-500 uppercase">SHA-256 FINGERPRINT:</span>
+              <span className="truncate max-w-[260px] text-stone-700 dark:text-stone-300">{successRecord.evidence_hash}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Status:</span>
-              <span className="text-amber-600 dark:text-amber-400 font-bold">SUBMITTED (Pending Organizer Review)</span>
+            <div className="flex justify-between border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="text-stone-500 uppercase">CONSENSUS STATUS:</span>
+              <span className="text-amber-700 dark:text-amber-400 font-bold">[ IN AUDIT // PENDING COUNCIL ]</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 dark:text-slate-400">Submitter Wallet:</span>
-              <span className="text-slate-700 dark:text-slate-300">{truncateAddress(successRecord.submitter_address)}</span>
+            <div className="flex justify-between pt-1">
+              <span className="text-stone-500 uppercase">DEPOSITING CADRE:</span>
+              <span className="text-stone-700 dark:text-stone-300">{truncateAddress(successRecord.submitter_address)}</span>
             </div>
           </div>
 
-          <div className="flex items-center justify-center gap-3 pt-2">
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-3">
             <Link
               to="/student"
-              className="px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors"
+              className="px-5 py-2.5 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-200 text-xs font-bold uppercase tracking-wider border border-stone-300 dark:border-stone-700 transition-colors"
             >
-              Back to Dashboard
+              [ Return to Cadre Desk ]
             </Link>
             <Link
               to={`/activity/${successRecord.activity_id}`}
-              className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition-colors shadow-md"
+              className="px-5 py-2.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
             >
-              View Full Audit Trail
+              [ Inspect Evidentiary Dossier ]
             </Link>
           </div>
         </div>
@@ -364,165 +375,179 @@ export const SubmitActivityPage: React.FC = () => {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 pb-16">
-      {/* Back button */}
+    <div className="max-w-3xl mx-auto space-y-8 pb-20">
+      {/* Return navigation link */}
       <Link
         to="/student"
-        className="inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+        className="inline-flex items-center gap-2 text-xs font-mono-code text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition-colors uppercase tracking-wider"
       >
-        <ArrowLeft className="w-4 h-4" />
-        <span>Return to Dashboard</span>
+        <ArrowLeft className="w-3.5 h-3.5" />
+        <span>[ Return to Student Cadre Desk ]</span>
       </Link>
 
-      <div className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-md space-y-6">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Log Campus Sustainability Action</h1>
-            <span className="text-[10px] bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono font-semibold">
-              WALLET-SIGNED
-            </span>
-          </div>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-            Fill in the details, attach proof image for SHA-256 fingerprinting, and sign the transaction with your wallet.
-          </p>
+      {/* Masthead Header */}
+      <div className="border-b border-stone-300 dark:border-stone-800 pb-6 space-y-3 font-mono-code">
+        <div className="flex items-center gap-3 text-xs text-stone-500">
+          <span className="stamp-badge border-stone-400 text-stone-700 dark:text-stone-300">
+            DEPOSITION CODEX 2026.IV
+          </span>
+          <span>// DISPATCH ENTRY FOLIO</span>
         </div>
+        <h1 className="font-serif-editorial text-4xl sm:text-5xl font-normal text-stone-900 dark:text-stone-100 tracking-tight">
+          Empirical Field Deposition{' '}
+          <span className="italic font-normal">& Evidence Inscription.</span>
+        </h1>
+        <p className="text-base text-stone-600 dark:text-stone-400 font-sans font-light leading-relaxed">
+          Direct deposition of institutional environmental impact data. Photographic proofs are cryptographically
+          fingerprinted via SHA-256 before Tezos on-chain notarization. Silvicultural submissions undergo automated
+          YOLOv8 cognitive metrology.
+        </p>
+      </div>
 
-        {errorMessage && (
-          <div className="p-4 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-start gap-2.5">
-            <AlertTriangle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-            <span>{errorMessage}</span>
-          </div>
-        )}
+      {/* Main Form Dossier Card */}
+      <div className="p-6 sm:p-8 rounded-lg bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-800 shadow-sm">
+        <form onSubmit={handleSubmit} className="space-y-8">
+          {errorMessage && (
+            <div className="p-4 rounded bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs font-mono-code flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>DEPOSITION ERROR: {errorMessage}</span>
+            </div>
+          )}
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Category & Unit selection */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                Activity Category *
-              </label>
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value as ActivityCategory)}
-                disabled={isSubmitting}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-              >
-                <option value="Recycling">Recycling</option>
-                <option value="Tree planting">Tree planting (with GreenAI Detection)</option>
-                <option value="Energy conservation">Energy conservation</option>
-                <option value="Water conservation">Water conservation</option>
-                <option value="Waste collection">Waste collection</option>
-                <option value="Other">Other</option>
-              </select>
+          {/* ================================================================= */}
+          {/* SECTION 01: EMPIRICAL PARAMETERS */}
+          {/* ================================================================= */}
+          <div className="space-y-5">
+            <div className="border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="font-mono-code text-[11px] text-stone-500 uppercase tracking-widest">[ SECTION 01 ]</span>
+              <h3 className="font-serif-editorial text-xl font-normal text-stone-900 dark:text-stone-100">
+                Empirical Environmental Parameters
+              </h3>
             </div>
 
-            {/* Quantity and Unit pairing */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                <span>Quantity & Unit *</span>
-                {category === 'Tree planting' && aiResult && (
-                  <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono">
-                    AI Suggested: {aiResult.count}
-                  </span>
-                )}
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  step="any"
-                  min="0.01"
-                  placeholder="e.g. 5"
-                  value={quantity}
-                  onChange={(e) => setQuantity(e.target.value)}
+            <div className="grid sm:grid-cols-2 gap-5 font-mono-code">
+              {/* Category */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider block">
+                  Action Classification *
+                </label>
+                <select
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value as ActivityCategory)}
                   disabled={isSubmitting}
-                  required
-                  className="w-2/3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-                />
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-sans"
+                >
+                  <option value="Tree planting">Tree planting (Silviculture)</option>
+                  <option value="Recycling">Recycling (Materials Diverted)</option>
+                  <option value="Energy conservation">Energy conservation (Abatement)</option>
+                  <option value="Water conservation">Water conservation (Resource Care)</option>
+                  <option value="Waste collection">Waste collection (Sanitation)</option>
+                  <option value="Other">Other Campus Environmental Project</option>
+                </select>
+              </div>
 
-                {category === 'Other' ? (
+              {/* Quantity and Unit */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider block">
+                  Measured Quantity *
+                </label>
+                <div className="flex gap-2">
                   <input
-                    type="text"
-                    placeholder="custom unit"
-                    value={customUnit}
-                    onChange={(e) => setCustomUnit(e.target.value)}
+                    type="number"
+                    step="any"
+                    min="0.01"
+                    placeholder="e.g. 12"
+                    value={quantity}
+                    onChange={(e) => setQuantity(e.target.value)}
                     disabled={isSubmitting}
-                    className="w-1/3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                    required
+                    className="w-2/3 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-mono-code"
                   />
-                ) : (
-                  <select
-                    value={unit}
-                    onChange={(e) => setUnit(e.target.value)}
-                    disabled={isSubmitting}
-                    className="w-1/3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-emerald-600 dark:text-emerald-400 font-semibold focus:outline-none focus:border-emerald-500 transition-colors"
-                  >
-                    {CATEGORY_UNITS[category].map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                )}
+
+                  {category === 'Other' ? (
+                    <input
+                      type="text"
+                      placeholder="custom unit"
+                      value={customUnit}
+                      onChange={(e) => setCustomUnit(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-1/3 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-sans"
+                    />
+                  ) : (
+                    <select
+                      value={unit}
+                      onChange={(e) => setUnit(e.target.value)}
+                      disabled={isSubmitting}
+                      className="w-1/3 bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 font-bold focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-mono-code"
+                    >
+                      {CATEGORY_UNITS[category].map((u) => (
+                        <option key={u} value={u}>
+                          {u}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Activity Date */}
-          <div className="grid sm:grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                <span>Reported Activity Date</span>
-                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">Off-chain metadata</span>
+            {/* Date and Submitter */}
+            <div className="grid sm:grid-cols-2 gap-5 font-mono-code">
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider block">
+                  Observation Date
+                </label>
+                <input
+                  type="date"
+                  value={activityDate}
+                  onChange={(e) => setActivityDate(e.target.value)}
+                  disabled={isSubmitting}
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-mono-code"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider block">
+                  Enrolled Submitter Credential
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={wallet.address || 'Connect wallet to proceed'}
+                  className="w-full bg-stone-100 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded p-3 text-xs font-mono-code text-stone-500 cursor-not-allowed"
+                />
+              </div>
+            </div>
+
+            {/* Description */}
+            <div className="space-y-1.5 font-mono-code">
+              <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider block">
+                Field Geolocation & Contextual Notes *
               </label>
-              <input
-                type="date"
-                value={activityDate}
-                onChange={(e) => setActivityDate(e.target.value)}
+              <textarea
+                rows={3}
+                placeholder="Specify precise campus location (e.g. North Quad Arboretum, Block 4 Sorting Station) and empirical notes..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
                 disabled={isSubmitting}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-              />
-              <p className="text-[10px] text-slate-500">
-                Note: Contract timestamp is independently recorded on the Tezos blockchain when mined.
-              </p>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-                <span>Submitter Identity</span>
-                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-normal">From Tezos Sender</span>
-              </label>
-              <input
-                type="text"
-                disabled
-                value={wallet.address || 'Connect wallet to proceed'}
-                className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-500 cursor-not-allowed"
+                required
+                className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-sans leading-relaxed"
               />
             </div>
           </div>
 
-          {/* Short description */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-              Description & Campus Location *
-            </label>
-            <textarea
-              rows={3}
-              placeholder="Provide context on where the activity occurred (e.g., Campus East Lawn, Dorm Block B sorting station)..."
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={isSubmitting}
-              required
-              className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-3.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-            />
-          </div>
+          {/* ================================================================= */}
+          {/* SECTION 02: PHOTOGRAPHIC PROOF & DIGEST METROLOGY */}
+          {/* ================================================================= */}
+          <div className="space-y-4">
+            <div className="border-b border-stone-200 dark:border-stone-800 pb-2">
+              <span className="font-mono-code text-[11px] text-stone-500 uppercase tracking-widest">[ SECTION 02 ]</span>
+              <h3 className="font-serif-editorial text-xl font-normal text-stone-900 dark:text-stone-100">
+                Photographic Proof & Digest Metrology
+              </h3>
+            </div>
 
-          {/* Evidence File Upload and SHA-256 Calculation */}
-          <div className="space-y-3">
-            <label className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center justify-between">
-              <span>Evidence Photograph *</span>
-              <span className="text-[10px] text-teal-600 dark:text-teal-400 font-mono">SHA-256 Fingerprinted</span>
-            </label>
-
-            <div className="border-2 border-dashed border-slate-300 dark:border-slate-800 hover:border-emerald-500/50 rounded-2xl p-6 text-center transition-colors bg-slate-50 dark:bg-slate-950/50">
+            <div className="border-2 border-dashed border-stone-300 dark:border-stone-800 hover:border-stone-500 rounded-lg p-6 text-center transition-colors bg-stone-50/50 dark:bg-stone-950/40">
               <input
                 type="file"
                 id="evidence-upload"
@@ -531,77 +556,62 @@ export const SubmitActivityPage: React.FC = () => {
                 disabled={isSubmitting}
                 className="hidden"
               />
-              <label
-                htmlFor="evidence-upload"
-                className="cursor-pointer flex flex-col items-center justify-center space-y-2"
-              >
-                <div className="w-12 h-12 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-600 dark:text-slate-300">
-                  {isHashing ? (
-                    <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
-                  ) : (
-                    <Upload className="w-6 h-6 text-emerald-500" />
-                  )}
+              <label htmlFor="evidence-upload" className="cursor-pointer flex flex-col items-center justify-center space-y-2">
+                <div className="w-12 h-12 rounded bg-stone-200 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-300">
+                  {isHashing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </div>
                 <div>
-                  <span className="text-sm font-semibold text-emerald-600 dark:text-emerald-400 hover:underline">
-                    Click to upload evidence photo
+                  <span className="text-xs font-mono-code font-bold uppercase tracking-wider text-stone-900 dark:text-stone-100 hover:underline">
+                    [ Click to Select Evidence Photograph ]
                   </span>
-                  <span className="text-xs text-slate-500 block mt-0.5">
-                    PNG, JPG, or WebP up to 10MB
+                  <span className="text-[11px] font-mono-code text-stone-500 block mt-1">
+                    Accepts PNG, JPG, or WebP up to 10MB
                   </span>
                 </div>
               </label>
 
               {evidenceFile && (
-                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-800 text-left space-y-3">
+                <div className="mt-4 pt-4 border-t border-stone-200 dark:border-stone-800 text-left space-y-3 font-mono-code">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="text-slate-700 dark:text-slate-300 font-medium truncate max-w-xs">{evidenceFile.name}</span>
-                    <span className="text-slate-500">{(evidenceFile.size / 1024).toFixed(1)} KB</span>
+                    <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-xs">{evidenceFile.name}</span>
+                    <span className="text-stone-500">{(evidenceFile.size / 1024).toFixed(1)} KB</span>
                   </div>
 
-                  <div className="p-3 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 space-y-1">
-                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
+                  <div className="p-3 bg-white dark:bg-stone-900 rounded border border-stone-300 dark:border-stone-800 space-y-1">
+                    <div className="flex items-center gap-1.5 text-[11px] text-stone-500 font-semibold uppercase">
                       <Hash className="w-3.5 h-3.5" />
-                      <span>SHA-256 Digest (Calculated Client-side):</span>
+                      <span>SHA-256 Digest (Client Computed):</span>
                     </div>
-                    <p className="font-mono text-xs text-slate-700 dark:text-slate-300 break-all select-all">
-                      {evidenceHash || 'Calculating...'}
+                    <p className="text-xs text-stone-900 dark:text-stone-100 break-all select-all font-bold">
+                      {evidenceHash || 'Computing SHA-256 cryptographic hash...'}
                     </p>
                   </div>
 
-                  {/* Upload progress indicator */}
                   {uploadProgress === 'uploading' && (
-                    <div className="flex items-center gap-2 text-[11px] text-teal-600 dark:text-teal-400">
+                    <div className="flex items-center gap-2 text-xs text-stone-600 dark:text-stone-400">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Uploading evidence to secure storage…</span>
+                      <span>Uploading to secure evidentiary vault…</span>
                     </div>
                   )}
                   {uploadProgress === 'done' && serverHash && (
-                    <div className="flex items-center gap-2 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Server hash verified: {serverHash.slice(0, 16)}…</span>
-                    </div>
-                  )}
-                  {uploadProgress === 'error' && (
-                    <div className="flex items-center gap-2 text-[11px] text-rose-600 dark:text-rose-400">
-                      <AlertTriangle className="w-3.5 h-3.5" />
-                      <span>Upload or hash verification failed — see error above.</span>
+                      <span>Vault digest verified matching: {serverHash.slice(0, 16)}…</span>
                     </div>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Duplicate Evidence Alert */}
             {duplicateWarning && (
-              <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-start gap-2.5">
-                <ShieldAlert className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+              <div className="p-4 rounded bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs font-mono-code flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                 <div className="space-y-1">
-                  <span className="font-bold">Duplicate Evidence Detected</span>
+                  <span className="font-bold uppercase tracking-wider block">Duplicate Fingerprint Collision</span>
                   <p>
-                    An identical photograph with this exact SHA-256 fingerprint has already been submitted in activity{' '}
-                    <code className="font-mono text-amber-700 dark:text-amber-300 font-bold">{duplicateActivityId || 'record'}</code>.
-                    Please provide authentic, original evidence for your current sustainability contribution.
+                    An identical photograph with this exact SHA-256 digest has previously been submitted in record{' '}
+                    <code className="font-bold underline">{duplicateActivityId || 'existing'}</code>. You must provide
+                    authentic original evidence.
                   </p>
                 </div>
               </div>
@@ -609,26 +619,19 @@ export const SubmitActivityPage: React.FC = () => {
           </div>
 
           {/* ================================================================= */}
-          {/* GREENAI: SMART TREE DETECTION SECTION */}
+          {/* SECTION 03: COGNITIVE GREENAI METROLOGY (IF TREE PLANTING) */}
           {/* ================================================================= */}
           {category === 'Tree planting' && evidenceFile && (
-            <div className="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-white to-emerald-50/50 dark:from-indigo-950/40 dark:via-slate-900 dark:to-emerald-950/20 border-2 border-indigo-500/30 space-y-4 shadow-sm animate-fadeIn">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 space-y-4 font-mono-code">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 dark:border-stone-800 pb-3">
                 <div className="flex items-center gap-2">
-                  <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400">
-                    <Bot className="w-5 h-5" />
-                  </div>
+                  <Bot className="w-5 h-5 text-stone-800 dark:text-stone-200" />
                   <div>
-                    <div className="flex items-center gap-1.5">
-                      <h3 className="font-bold text-slate-900 dark:text-white text-sm">
-                        GreenAI — Smart Tree Detection
-                      </h3>
-                      <span className="text-[10px] bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 px-1.5 py-0.2 rounded font-mono font-bold">
-                        YOLO-World
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      Run automated vision analysis to count trees and verify planting evidence.
+                    <h3 className="font-serif-editorial text-lg text-stone-900 dark:text-stone-100">
+                      GreenAI Cognitive Tree Metrology
+                    </h3>
+                    <p className="text-[11px] text-stone-500 font-sans">
+                      Automated neural vision scan for sapling crown detection.
                     </p>
                   </div>
                 </div>
@@ -637,80 +640,65 @@ export const SubmitActivityPage: React.FC = () => {
                   type="button"
                   onClick={handleAnalyzeWithGreenAI}
                   disabled={isAnalyzingAI || isSubmitting}
-                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
+                  className="px-4 py-2 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-50"
                 >
                   {isAnalyzingAI ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       <span>Scanning Photograph…</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-4 h-4" />
-                      <span>{aiResult ? 'Re-Analyze with GreenAI' : 'Analyze with GreenAI'}</span>
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-600" />
+                      <span>{aiResult ? '[ Re-Scan Vision Model ]' : '[ Run Cognitive Metrology ]'}</span>
                     </>
                   )}
                 </button>
               </div>
 
               {aiError && (
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2">
+                <div className="p-3 rounded bg-rose-50 dark:bg-rose-950/20 border border-rose-300 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{aiError}</span>
                 </div>
               )}
 
-              {/* Progress Indicator when analyzing */}
-              {isAnalyzingAI && (
-                <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-500/30 text-indigo-800 dark:text-indigo-200 text-xs flex items-center gap-3 animate-pulse">
-                  <Loader2 className="w-5 h-5 animate-spin text-indigo-500 shrink-0" />
-                  <div>
-                    <div className="font-bold">GreenAI is analyzing photograph...</div>
-                    <div className="text-[11px] text-slate-600 dark:text-slate-400">
-                      Running open-vocabulary YOLO-World object detection model for tree crown and sapling identification.
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Detection Results Display */}
               {aiResult && !isAnalyzingAI && (
                 <div className="space-y-4 pt-1">
-                  {/* View Toggle & Image Preview */}
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-xs">
-                      <span className="font-semibold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                        <Eye className="w-3.5 h-3.5 text-indigo-500" />
-                        <span>Detection Preview:</span>
+                      <span className="font-bold uppercase tracking-wider text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-stone-500" />
+                        <span>Contour Inspection:</span>
                       </span>
 
-                      <div className="flex rounded-lg bg-slate-100 dark:bg-slate-800 p-0.5 text-[11px] font-medium border border-slate-200 dark:border-slate-700">
+                      <div className="flex rounded bg-stone-200 dark:bg-stone-800 p-0.5 text-[11px] font-bold">
                         <button
                           type="button"
                           onClick={() => setActiveImageView('ANNOTATED')}
-                          className={`px-2.5 py-1 rounded-md transition-colors ${
+                          className={`px-3 py-1 rounded transition-colors uppercase ${
                             activeImageView === 'ANNOTATED'
-                              ? 'bg-indigo-600 text-white font-bold'
-                              : 'text-slate-600 dark:text-slate-400'
+                              ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-950'
+                              : 'text-stone-600 dark:text-stone-400'
                           }`}
                         >
-                          Annotated AI View ({aiResult.count} boxes)
+                          Annotated AI View ({aiResult.count})
                         </button>
                         <button
                           type="button"
                           onClick={() => setActiveImageView('ORIGINAL')}
-                          className={`px-2.5 py-1 rounded-md transition-colors ${
+                          className={`px-3 py-1 rounded transition-colors uppercase ${
                             activeImageView === 'ORIGINAL'
-                              ? 'bg-indigo-600 text-white font-bold'
-                              : 'text-slate-600 dark:text-slate-400'
+                              ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-950'
+                              : 'text-stone-600 dark:text-stone-400'
                           }`}
                         >
-                          Original Photograph
+                          Raw Specimen
                         </button>
                       </div>
                     </div>
 
-                    <div className="rounded-2xl overflow-hidden bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-center p-2 max-h-72">
+                    <div className="rounded overflow-hidden bg-stone-900 border border-stone-300 dark:border-stone-800 flex items-center justify-center p-2 max-h-72">
                       <img
                         src={
                           activeImageView === 'ANNOTATED' && aiResult.annotated_image_base64
@@ -718,76 +706,49 @@ export const SubmitActivityPage: React.FC = () => {
                             : evidencePreviewUrl || ''
                         }
                         alt="GreenAI Tree Detection"
-                        className="max-h-68 w-auto object-contain rounded-xl"
+                        className="max-h-68 w-auto object-contain rounded"
                       />
                     </div>
                   </div>
 
                   {/* Summary Cards */}
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        Estimated Count
-                      </span>
-                      <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                        <Trees className="w-4 h-4" />
-                        <span>{aiResult.count} {aiResult.count === 1 ? 'Tree' : 'Trees'}</span>
+                    <div className="p-3 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-0.5">
+                      <span className="text-[10px] text-stone-500 uppercase tracking-wider block">Estimated Count</span>
+                      <div className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100 flex items-center gap-1.5">
+                        <Trees className="w-4 h-4 text-emerald-600" />
+                        <span>{aiResult.count} {aiResult.count === 1 ? 'Sapling' : 'Saplings'}</span>
                       </div>
                     </div>
 
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        Detection Confidence
-                      </span>
-                      <div className="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
+                    <div className="p-3 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-0.5">
+                      <span className="text-[10px] text-stone-500 uppercase tracking-wider block">Confidence Score</span>
+                      <div className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100">
                         {(aiResult.average_confidence * 100).toFixed(1)}%
                       </div>
                     </div>
 
-                    <div className="p-3 rounded-xl bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-0.5 col-span-2 sm:col-span-1">
-                      <span className="text-[10px] text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                        Inference Model
-                      </span>
-                      <div className="font-bold text-slate-800 dark:text-slate-200 truncate">
-                        YOLO-World v8s
+                    <div className="p-3 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-0.5 col-span-2 sm:col-span-1">
+                      <span className="text-[10px] text-stone-500 uppercase tracking-wider block">Cognitive Model</span>
+                      <div className="font-bold text-stone-800 dark:text-stone-200 truncate">
+                        YOLOv8 Open-World
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono truncate">
-                        {aiResult.processing_time_ms}ms
+                      <div className="text-[10px] text-stone-400 font-mono-code truncate">
+                        Latency: {aiResult.processing_time_ms}ms
                       </div>
                     </div>
                   </div>
 
-                  {/* Individual Bounding Boxes List */}
-                  {aiResult.detections.length > 0 && (
-                    <div className="space-y-1.5">
-                      <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wider block">
-                        Detected Items ({aiResult.detections.length}):
-                      </span>
-                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                        {aiResult.detections.map((det) => (
-                          <span
-                            key={det.id}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] font-mono"
-                          >
-                            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                            <span className="font-semibold text-slate-800 dark:text-slate-200">{det.class_name} #{det.id.split('-')[1]}</span>
-                            <span className="text-slate-400">({(det.confidence * 100).toFixed(0)}%)</span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Count Sync / Action */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-500/30">
-                    <div className="text-xs text-slate-700 dark:text-slate-300">
+                  {/* Count Sync Action */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
+                    <div className="text-xs text-stone-700 dark:text-stone-300 font-sans">
                       {quantity && parseFloat(quantity) !== aiResult.count ? (
                         <span>
-                          <strong>Note:</strong> Your entered count ({quantity}) differs from GreenAI estimate ({aiResult.count}). You may confirm your manual count or apply the AI detected count.
+                          <strong>Variance:</strong> Entered count ({quantity}) differs from vision inference ({aiResult.count}).
                         </span>
                       ) : (
                         <span>
-                          <strong>Count Confirmed:</strong> AI analysis matches your submission quantity.
+                          <strong>Aligned:</strong> Entered count matches neural vision inference.
                         </span>
                       )}
                     </div>
@@ -795,42 +756,36 @@ export const SubmitActivityPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleApplyAiCount}
-                      className="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-colors shrink-0 flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-colors shrink-0 flex items-center gap-1.5"
                     >
                       <Check className="w-3.5 h-3.5" />
-                      <span>Use AI Count: {aiResult.count} saplings</span>
+                      <span>Apply AI Count ({aiResult.count})</span>
                     </button>
                   </div>
-
-                  {/* Caveat Notice */}
-                  {aiResult.discrepancy_notice && (
-                    <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 flex items-start gap-2">
-                      <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                      <span>{aiResult.discrepancy_notice}</span>
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Transaction submit button */}
-          <div className="pt-2">
+          {/* ================================================================= */}
+          {/* SECTION 04: IMMUTABLE STATE INSCRIPTION */}
+          {/* ================================================================= */}
+          <div className="pt-2 font-mono-code">
             <button
               type="submit"
               disabled={isSubmitting || duplicateWarning}
-              className="w-full py-3.5 px-6 rounded-2xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed hover:scale-101"
+              className="w-full py-4 px-6 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 font-bold text-xs uppercase tracking-widest shadow-sm transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{submissionStep || 'Processing Transaction…'}</span>
+                  <Loader2 className="w-4 h-4 animate-spin text-emerald-400 dark:text-emerald-600" />
+                  <span>{submissionStep || 'NOTARIZING PROOF INTO PROTOCOL…'}</span>
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4" />
+                  <FileCheck className="w-4 h-4 text-emerald-400 dark:text-emerald-600" />
                   <span>
-                    Submit Activity with Cryptographic Proof {aiResult ? '(GreenAI Verified)' : ''}
+                    [ INSCRIBE DEPOSITION INTO PROTOCOL {aiResult ? '— COGNITIVELY SCANNED' : ''} ]
                   </span>
                 </>
               )}

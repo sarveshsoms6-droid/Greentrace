@@ -1,0 +1,45 @@
+services:
+  # Backend API Service
+  - type: web
+    name: greentrace-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: CORS_ORIGINS
+        value: https://greentrace-frontend.onrender.com,http://localhost:5173
+      - key: DATABASE_PATH
+        value: ./greentrace.db
+      - key: UPLOAD_DIRECTORY
+        value: ./protected_evidence
+      - key: TEZOS_RPC_URL
+        value: https://rpc.shadownet.teztnets.com
+      - key: TZKT_API_URL
+        value: https://api.shadownet.tzkt.io
+
+  # Frontend Static Web Application
+  - type: web
+    name: greentrace-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://greentrace-backend.onrender.com
+      - key: VITE_TEZOS_NETWORK
+        value: shadownet
+      - key: VITE_TEZOS_RPC_URL
+        value: https://rpc.shadownet.teztnets.com
+      - key: VITE_EXPLORER_URL
+        value: https://shadownet.tzkt.io
+

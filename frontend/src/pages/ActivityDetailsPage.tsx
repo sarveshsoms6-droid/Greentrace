@@ -97,34 +97,41 @@ export const ActivityDetailsPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className="max-w-2xl mx-auto py-24 text-center space-y-4">
-        <Loader2 className="w-10 h-10 animate-spin text-emerald-400 mx-auto" />
-        <h2 className="text-lg font-bold text-white">Loading Activity Details</h2>
-        <p className="text-xs text-slate-400">Querying SQLite records and Tezos SmartPy audit state...</p>
+      <div className="max-w-2xl mx-auto py-24 text-center space-y-4 font-mono-code">
+        <Loader2 className="w-8 h-8 animate-spin text-stone-800 dark:text-stone-200 mx-auto" />
+        <h2 className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100">
+          Retrieving Archival Folio
+        </h2>
+        <p className="text-xs text-stone-500">Querying persistent storage and Tezos SmartPy audit state...</p>
       </div>
     );
   }
 
   if (errorMessage || !activity) {
     return (
-      <div className="max-w-2xl mx-auto py-16 text-center space-y-5">
-        <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 mx-auto">
-          <AlertTriangle className="w-8 h-8" />
+      <div className="max-w-2xl mx-auto py-16 text-center space-y-5 font-mono-code">
+        <div className="stamp-badge border-rose-600 text-rose-700 dark:text-rose-400 mx-auto">
+          <AlertTriangle className="w-3.5 h-3.5" />
+          FOLIO NOT FOUND
         </div>
-        <h2 className="text-xl font-bold text-white">Activity Not Found</h2>
-        <p className="text-sm text-slate-400">{errorMessage || 'The requested activity does not exist in GreenTrace records.'}</p>
+        <h2 className="font-serif-editorial text-3xl text-stone-900 dark:text-stone-100">
+          Specimen Missing From Chronicle
+        </h2>
+        <p className="text-xs text-stone-500 max-w-md mx-auto font-sans">
+          {errorMessage || 'The requested activity does not exist in GreenTrace archival registers.'}
+        </p>
         <Link
           to="/history"
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-slate-800 text-slate-200 text-xs font-semibold hover:bg-slate-700 transition-colors"
+          className="inline-flex items-center gap-1.5 px-4 py-2 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 text-xs font-bold uppercase tracking-wider transition-colors"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Activity History</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>[ Return to Chronicle Register ]</span>
         </Link>
       </div>
     );
   }
 
-  const verificationUrl = `${window.location.origin}/verify?id=${activity.activity_id}`;
+  const verificationUrl = `${window.location.origin}/verify?id=${encodeURIComponent(activity.activity_id)}`;
   const protectedEvidenceUrl = isOrganizer && wallet.address
     ? api.getProtectedEvidenceFileUrl(activity.evidence_hash, wallet.address)
     : null;
@@ -143,13 +150,13 @@ export const ActivityDetailsPage: React.FC = () => {
       canvas.width = 400;
       canvas.height = 400;
       if (ctx) {
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = '#FAF7F2';
         ctx.fillRect(0, 0, 400, 400);
         ctx.drawImage(img, 20, 20, 360, 360);
       }
       const pngFile = canvas.toDataURL('image/png');
       const downloadLink = document.createElement('a');
-      downloadLink.download = `greentrace-qr-${activity.activity_id}.png`;
+      downloadLink.download = `greentrace-attestation-${activity.activity_id}.png`;
       downloadLink.href = pngFile;
       downloadLink.click();
       URL.revokeObjectURL(url);
@@ -162,160 +169,161 @@ export const ActivityDetailsPage: React.FC = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 pb-16">
-      {/* Back button */}
-      <div className="flex items-center justify-between">
+    <div className="max-w-4xl mx-auto space-y-8 pb-20">
+      {/* Return navigation bar */}
+      <div className="flex items-center justify-between font-mono-code text-xs">
         <Link
           to="/history"
-          className="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
+          className="inline-flex items-center gap-1.5 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 transition-colors uppercase tracking-wider"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Return to Activity History</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>[ Return to Chronicle Register ]</span>
         </Link>
         <Link
           to="/student"
-          className="inline-flex items-center gap-1.5 text-xs text-emerald-400 hover:text-emerald-300 font-semibold"
+          className="inline-flex items-center gap-1.5 text-stone-700 dark:text-stone-300 hover:underline uppercase tracking-wider font-bold"
         >
-          <span>My Student Dashboard</span>
+          <span>[ Student Cadre Desk ]</span>
         </Link>
       </div>
 
-      {/* Main Card */}
-      <div className="p-6 sm:p-8 rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl space-y-8">
+      {/* Main Archival Dossier Container */}
+      <div className="p-6 sm:p-10 rounded-lg bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-800 shadow-md space-y-8 font-mono-code">
         {/* Header with Title, Status and Confirmation Badge */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-6">
-          <div className="space-y-1">
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6 border-b border-stone-300 dark:border-stone-800 pb-6">
+          <div className="space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-mono text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md font-bold">
-                ID: {activity.activity_id}
+              <span className="text-xs font-bold text-stone-900 dark:text-stone-100">
+                FOLIO ID: {activity.activity_id}
               </span>
               {activity.blockchain_confirmed === 1 ? (
-                <span className="inline-flex items-center gap-1 text-[11px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-semibold font-mono">
-                  <ShieldCheck className="w-3.5 h-3.5" />
+                <span className="stamp-badge border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5 text-[11px]">
+                  <ShieldCheck className="w-3 h-3" />
                   BLOCKCHAIN CONFIRMED
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-1 text-[11px] bg-amber-500/10 text-amber-400 border border-amber-500/30 px-2.5 py-0.5 rounded-full font-semibold font-mono">
-                  <Clock className="w-3.5 h-3.5" />
-                  PENDING ON-CHAIN CONFIRMATION
+                <span className="stamp-badge border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-500/5 text-[11px]">
+                  <Clock className="w-3 h-3" />
+                  PENDING FINAL BLOCK MINING
                 </span>
               )}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white">
+            <h1 className="font-serif-editorial text-3xl sm:text-4xl font-normal text-stone-900 dark:text-stone-100">
               {activity.category}
             </h1>
           </div>
 
           <div>
             {activity.status_cache === 'APPROVED' ? (
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Status: APPROVED</span>
-              </div>
+              <span className="stamp-badge border-emerald-600 text-emerald-700 dark:text-emerald-400 bg-emerald-500/5 text-xs">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                COUNCIL RATIFIED
+              </span>
             ) : activity.status_cache === 'SUBMITTED' ? (
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                <Clock className="w-4 h-4" />
-                <span>Status: PENDING REVIEW</span>
-              </div>
+              <span className="stamp-badge border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-500/5 text-xs">
+                <Clock className="w-3.5 h-3.5" />
+                PENDING FACULTY AUDIT
+              </span>
             ) : (
-              <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold bg-rose-500/10 text-rose-400 border border-rose-500/30">
-                <XCircle className="w-4 h-4" />
-                <span>Status: REJECTED</span>
-              </div>
+              <span className="stamp-badge border-rose-600 text-rose-700 dark:text-rose-400 bg-rose-500/5 text-xs">
+                <XCircle className="w-3.5 h-3.5" />
+                COUNCIL REJECTED
+              </span>
             )}
           </div>
         </div>
 
-        {/* Scope and Metrics */}
+        {/* Scope and Metrics: 4 Archival Blocks */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-xs text-slate-400">Quantity</span>
-            <div className="text-xl font-bold text-white font-mono">
-              {activity.quantity} <span className="text-emerald-400 text-sm">{activity.unit}</span>
+          <div className="p-4 rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 space-y-1">
+            <span className="text-[10px] text-stone-500 uppercase tracking-widest block">Quantitative Scope</span>
+            <div className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100">
+              {activity.quantity} <span className="text-xs font-mono-code font-normal text-stone-600 dark:text-stone-400">{activity.unit}</span>
             </div>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-xs text-slate-400">Tezos Network</span>
-            <div className="text-base font-bold text-slate-200">Shadownet</div>
-            <span className="text-[10px] text-emerald-400 font-mono">rpc.shadownet.teztnets.com</span>
+          <div className="p-4 rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 space-y-1">
+            <span className="text-[10px] text-stone-500 uppercase tracking-widest block">Consensus Network</span>
+            <div className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">Tezos</div>
+            <span className="text-[10px] text-stone-500 block truncate">Shadownet</span>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-xs text-slate-400">Submitted At</span>
-            <div className="text-xs font-bold text-slate-200 font-mono">
+          <div className="p-4 rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 space-y-1">
+            <span className="text-[10px] text-stone-500 uppercase tracking-widest block">Deposition Date</span>
+            <div className="text-xs font-bold text-stone-800 dark:text-stone-200">
               {formatTimestamp(activity.submitted_at)}
             </div>
-            <span className="text-[10px] text-slate-500">Mined timestamp</span>
+            <span className="text-[10px] text-stone-500 block">Genesis Inscription</span>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-1">
-            <span className="text-xs text-slate-400">Decision Date</span>
-            <div className="text-xs font-bold text-slate-200 font-mono">
+          <div className="p-4 rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 space-y-1">
+            <span className="text-[10px] text-stone-500 uppercase tracking-widest block">Ratification Date</span>
+            <div className="text-xs font-bold text-stone-800 dark:text-stone-200">
               {activity.approved_at
                 ? formatTimestamp(activity.approved_at)
                 : activity.rejected_at
                 ? formatTimestamp(activity.rejected_at)
-                : 'Awaiting Decision'}
+                : 'Awaiting Verdict'}
             </div>
-            <span className="text-[10px] text-slate-500">Review status</span>
+            <span className="text-[10px] text-stone-500 block">Arbitration Status</span>
           </div>
         </div>
 
         {/* Immutable On-Chain Cryptographic Audit Trail */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Lock className="w-4 h-4 text-emerald-400" />
-            <h3 className="text-base font-bold text-white">Cryptographic Blockchain References</h3>
-            <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded font-mono">Tezos On-Chain</span>
+            <Lock className="w-4 h-4 text-stone-500" />
+            <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
+              Cryptographic Blockchain References
+            </h3>
           </div>
 
-          <div className="rounded-2xl bg-slate-950 border border-slate-800 p-5 space-y-3 font-mono text-xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-slate-900">
-              <span className="text-slate-400">Submitter Student Address:</span>
-              <span className="text-white select-all">{activity.submitter_address}</span>
+          <div className="rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 p-5 space-y-3 text-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-stone-200 dark:border-stone-800">
+              <span className="text-stone-500 uppercase">SUBMITTER CADRE ADDRESS:</span>
+              <span className="font-bold text-stone-900 dark:text-stone-100 select-all">{activity.submitter_address}</span>
             </div>
 
             {activity.submission_tx_hash && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-slate-900">
-                <span className="text-slate-400">Submission Operation Hash:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-stone-200 dark:border-stone-800">
+                <span className="text-stone-500 uppercase">SUBMISSION OPERATION HASH:</span>
                 <a
                   href={`${EXPLORER_URL}/${activity.submission_tx_hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-teal-400 hover:text-teal-300 inline-flex items-center gap-1 select-all"
+                  className="text-stone-900 dark:text-stone-100 underline decoration-stone-300 hover:text-emerald-600 inline-flex items-center gap-1 font-bold select-all"
                 >
                   <span>{activity.submission_tx_hash}</span>
-                  <ExternalLink className="w-3 h-3" />
+                  <ExternalLink className="w-3 h-3 text-stone-400" />
                 </a>
               </div>
             )}
 
             {activity.approver_address && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-slate-900">
-                <span className="text-slate-400">Reviewer Organizer Address:</span>
-                <span className="text-indigo-300 select-all">{activity.approver_address}</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-stone-200 dark:border-stone-800">
+                <span className="text-stone-500 uppercase">ARBITRATING FACULTY ORGANIZER:</span>
+                <span className="font-bold text-stone-900 dark:text-stone-100 select-all">{activity.approver_address}</span>
               </div>
             )}
 
             {activity.approval_tx_hash && (
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-slate-900">
-                <span className="text-slate-400">Decision Operation Hash:</span>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 py-1 border-b border-stone-200 dark:border-stone-800">
+                <span className="text-stone-500 uppercase">RATIFICATION OPERATION HASH:</span>
                 <a
                   href={`${EXPLORER_URL}/${activity.approval_tx_hash}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-teal-400 hover:text-teal-300 inline-flex items-center gap-1 select-all"
+                  className="text-stone-900 dark:text-stone-100 underline decoration-stone-300 hover:text-emerald-600 inline-flex items-center gap-1 font-bold select-all"
                 >
                   <span>{activity.approval_tx_hash}</span>
-                  <ExternalLink className="w-3 h-3" />
+                  <ExternalLink className="w-3 h-3 text-stone-400" />
                 </a>
               </div>
             )}
 
             <div className="flex flex-col gap-1 pt-1">
-              <span className="text-slate-400">Evidence SHA-256 Digest:</span>
-              <span className="text-teal-300 break-all select-all font-mono">{activity.evidence_hash}</span>
+              <span className="text-stone-500 uppercase">EVIDENTIARY SHA-256 DIGEST:</span>
+              <span className="text-stone-900 dark:text-stone-100 break-all select-all font-bold">{activity.evidence_hash}</span>
             </div>
           </div>
         </div>
@@ -323,40 +331,41 @@ export const ActivityDetailsPage: React.FC = () => {
         {/* Evidence Privacy & Inspection Section */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <FileCheck className="w-4 h-4 text-teal-400" />
-            <h3 className="text-base font-bold text-white">Photographic Evidence</h3>
-            <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded font-mono">Protected Storage</span>
+            <FileCheck className="w-4 h-4 text-stone-500" />
+            <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
+              Photographic Proof & Vault Storage
+            </h3>
           </div>
 
-          <div className="p-5 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+          <div className="p-5 rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 space-y-3">
             {isOrganizer ? (
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Authorized Organizer Access Granted</span>
+                  <div className="flex items-center gap-2 text-stone-800 dark:text-stone-200 text-xs font-bold uppercase tracking-wider">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>Authorized Faculty Councillor Clearance Confirmed</span>
                   </div>
                   <button
                     onClick={() => setIsPreviewModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 text-xs uppercase tracking-wider font-bold transition-colors"
                   >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>Inspect Evidence Image</span>
+                    <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>[ Inspect Evidence Image ]</span>
                   </button>
                 </div>
-                <p className="text-xs text-slate-400">
-                  As an authorized organizer, you can inspect the high-resolution photographic evidence off-chain to confirm activity scope.
+                <p className="text-xs text-stone-600 dark:text-stone-400 font-sans">
+                  As an accredited organizer, you possess clearance to inspect the high-resolution photographic evidence off-chain to confirm activity scope.
                 </p>
               </div>
             ) : (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 text-slate-300 text-xs font-semibold">
-                  <Lock className="w-4 h-4 text-emerald-400" />
-                  <span>Student Privacy Protected</span>
+                <div className="flex items-center gap-2 text-stone-800 dark:text-stone-200 text-xs font-bold uppercase tracking-wider">
+                  <Lock className="w-4 h-4 text-stone-500" />
+                  <span>Cadre Privacy Protected</span>
                 </div>
-                <p className="text-xs text-slate-400 leading-relaxed">
+                <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed font-sans">
                   Raw student photographic evidence is restricted to authorized campus organizers to prevent unauthorized public downloads.
-                  The SHA-256 cryptographic digest (<span className="font-mono text-teal-300">{activity.evidence_hash.substring(0, 16)}...</span>) guarantees that the evidence cannot be altered or falsified.
+                  The cryptographic SHA-256 fingerprint (<span className="font-mono-code text-stone-900 dark:text-stone-100 font-bold">{activity.evidence_hash.substring(0, 16)}...</span>) guarantees that the physical record cannot be modified post-deposition.
                 </p>
               </div>
             )}
@@ -368,58 +377,60 @@ export const ActivityDetailsPage: React.FC = () => {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">GreenAI Smart Tree Detection Audit</h3>
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
+                  GreenAI Cognitive Tree Metrology Audit
+                </h3>
               </div>
-              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono">
-                {activity.ai_model_name || 'YOLO-World'} {activity.ai_model_version ? `v${activity.ai_model_version}` : ''}
+              <span className="text-[10px] text-stone-500 font-bold uppercase">
+                {activity.ai_model_name || 'YOLOv8'} {activity.ai_model_version ? `v${activity.ai_model_version}` : ''}
               </span>
             </div>
 
-            <div className="rounded-2xl bg-slate-950 border border-slate-800 p-5 space-y-4 text-xs">
+            <div className="rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 p-5 space-y-4 text-xs">
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">Student Claimed</span>
-                  <div className="text-base font-bold text-white font-mono">{activity.quantity} {activity.unit}</div>
-                  <span className="text-[10px] text-slate-500">Self-reported quantity</span>
+                <div className="p-3.5 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-1">
+                  <span className="text-stone-500 text-[10px] uppercase tracking-wider block">Student Claimed</span>
+                  <div className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">{activity.quantity} {activity.unit}</div>
+                  <span className="text-[10px] text-stone-500">Self-reported quantity</span>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">AI Model Count</span>
-                  <div className="text-base font-bold text-emerald-400 font-mono">{activity.ai_detected_count} trees</div>
-                  <span className="text-[10px] text-slate-500">Automated computer vision</span>
+                <div className="p-3.5 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-1">
+                  <span className="text-stone-500 text-[10px] uppercase tracking-wider block">Neural Model Count</span>
+                  <div className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">{activity.ai_detected_count} trees</div>
+                  <span className="text-[10px] text-stone-500">Cognitive vision inference</span>
                 </div>
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">Model Confidence</span>
-                  <div className="text-base font-bold text-teal-400 font-mono">{((activity.ai_confidence_score || 0) * 100).toFixed(1)}%</div>
-                  <span className="text-[10px] text-slate-500">Average detection score</span>
+                <div className="p-3.5 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-1">
+                  <span className="text-stone-500 text-[10px] uppercase tracking-wider block">Model Confidence</span>
+                  <div className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">{((activity.ai_confidence_score || 0) * 100).toFixed(1)}%</div>
+                  <span className="text-[10px] text-stone-500">Mean bounding confidence</span>
                 </div>
               </div>
 
               {/* Discrepancy or Verification Badge */}
               {activity.quantity !== activity.ai_detected_count ? (
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <div className="p-3 rounded bg-amber-50 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-900 text-amber-900 dark:text-amber-300 text-xs flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-bold">Count Discrepancy Detected: </span>
-                    <span>
-                      Student reported {activity.quantity} trees, whereas GreenAI identified {activity.ai_detected_count} trees (difference: {Math.abs(activity.quantity - activity.ai_detected_count)}).
+                    <span className="font-bold uppercase">Variance Detected: </span>
+                    <span className="font-sans">
+                      Cadre reported {activity.quantity} trees, whereas GreenAI identified {activity.ai_detected_count} trees (diff: {Math.abs(activity.quantity - activity.ai_detected_count)}).
                     </span>
                   </div>
                 </div>
               ) : (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-bold">Count Corroborated: </span>
-                  <span>Student-reported tree count aligns with the GreenAI vision model inference.</span>
+                <div className="p-3 rounded bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span className="font-bold uppercase">Corroborated: </span>
+                  <span className="font-sans">Student-reported tree count matches computer vision inference.</span>
                 </div>
               )}
 
               {/* Annotated Photo toggle button */}
               {activity.ai_annotated_path && isOrganizer && (
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <Trees className="w-4 h-4 text-emerald-400" />
-                    <span>Annotated Detection Photograph with Bounding Boxes Available</span>
+                <div className="p-3 rounded bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-stone-700 dark:text-stone-300">
+                    <Trees className="w-4 h-4 text-stone-500" />
+                    <span>Annotated Detection Photograph with Bounding Contours Available</span>
                   </div>
                   <button
                     type="button"
@@ -427,40 +438,42 @@ export const ActivityDetailsPage: React.FC = () => {
                       setActivePhotoView('annotated');
                       setIsPreviewModalOpen(true);
                     }}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5"
+                    className="px-3 py-1.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5"
                   >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>View Annotated Photo</span>
+                    <ImageIcon className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>[ View Annotated ]</span>
                   </button>
                 </div>
               )}
-
-              <p className="text-[11px] text-slate-400 italic">
-                * GreenAI operates as an advisory verification layer. Decisions require cryptographic signatures from an authorized campus organizer wallet.
-              </p>
             </div>
           </div>
         )}
 
-        {/* Off-Chain Metadata & Notes */}
+        {/* Off-Chain Metadata & Contextual Notes */}
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <Layers className="w-4 h-4 text-cyan-400" />
-            <h3 className="text-base font-bold text-white">Off-Chain Metadata</h3>
+            <Layers className="w-4 h-4 text-stone-500" />
+            <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
+              Contextual Notes & Geolocation
+            </h3>
           </div>
 
-          <div className="rounded-2xl bg-slate-950 border border-slate-800 p-5 space-y-4 text-xs">
+          <div className="rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 p-5 space-y-4 text-xs font-sans">
             <div>
-              <span className="text-slate-400 block mb-1 font-semibold">Activity Description:</span>
-              <p className="text-slate-200 leading-relaxed bg-slate-900 p-3.5 rounded-xl border border-slate-800">
-                {activity.description || 'No additional description provided.'}
+              <span className="text-stone-500 block mb-1 font-mono-code uppercase font-semibold text-[10px]">
+                Field Observation Notes:
+              </span>
+              <p className="text-stone-800 dark:text-stone-200 leading-relaxed bg-white dark:bg-stone-900 p-3.5 rounded border border-stone-200 dark:border-stone-800">
+                {activity.description || 'No additional contextual description provided.'}
               </p>
             </div>
 
             {activity.rejection_reason && (
               <div>
-                <span className="text-rose-400 font-semibold block mb-1">Organizer Rejection Note:</span>
-                <p className="text-rose-200 bg-rose-950/30 p-3.5 rounded-xl border border-rose-900/50">
+                <span className="text-rose-700 dark:text-rose-400 block mb-1 font-mono-code uppercase font-semibold text-[10px]">
+                  Council Rejection Justification:
+                </span>
+                <p className="text-rose-900 dark:text-rose-200 bg-rose-50 dark:bg-rose-950/20 p-3.5 rounded border border-rose-300 dark:border-rose-900">
                   {activity.rejection_reason}
                 </p>
               </div>
@@ -468,116 +481,33 @@ export const ActivityDetailsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* GreenAI Smart Tree Detection Audit Section */}
-        {activity.ai_detected_count !== undefined && activity.ai_detected_count !== null && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">GreenAI Smart Tree Detection Audit</h3>
-              </div>
-              <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-0.5 rounded-full font-mono">
-                {activity.ai_model_name || 'YOLO-World'} {activity.ai_model_version ? `v${activity.ai_model_version}` : ''}
-              </span>
-            </div>
-
-            <div className="rounded-2xl bg-slate-950 border border-slate-800 p-5 space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">Student Claimed</span>
-                  <div className="text-base font-bold text-white font-mono">{activity.quantity} {activity.unit}</div>
-                  <span className="text-[10px] text-slate-500">Self-reported quantity</span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">AI Model Count</span>
-                  <div className="text-base font-bold text-emerald-400 font-mono">{activity.ai_detected_count} trees</div>
-                  <span className="text-[10px] text-slate-500">Automated computer vision</span>
-                </div>
-                <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <span className="text-slate-400 text-[11px]">Model Confidence</span>
-                  <div className="text-base font-bold text-teal-400 font-mono">{((activity.ai_confidence_score || 0) * 100).toFixed(1)}%</div>
-                  <span className="text-[10px] text-slate-500">Average detection score</span>
-                </div>
-              </div>
-
-              {/* Discrepancy or Verification Badge */}
-              {activity.quantity !== activity.ai_detected_count ? (
-                <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Count Discrepancy Detected: </span>
-                    <span>
-                      Student reported {activity.quantity} trees, whereas GreenAI identified {activity.ai_detected_count} trees (difference: {Math.abs(activity.quantity - activity.ai_detected_count)}).
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span className="font-bold">Count Corroborated: </span>
-                  <span>Student-reported tree count aligns with the GreenAI vision model inference.</span>
-                </div>
-              )}
-
-              {/* Annotated Photo toggle button */}
-              {activity.ai_annotated_path && isOrganizer && (
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-slate-300">
-                    <Trees className="w-4 h-4 text-emerald-400" />
-                    <span>Annotated Detection Photograph with Bounding Boxes Available</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setActivePhotoView('annotated');
-                      setIsPreviewModalOpen(true);
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold flex items-center gap-1.5"
-                  >
-                    <ImageIcon className="w-3.5 h-3.5" />
-                    <span>View Annotated Photo</span>
-                  </button>
-                </div>
-              )}
-
-              <p className="text-[11px] text-slate-400 italic">
-                * GreenAI operates as an advisory verification layer. Decisions require cryptographic signatures from an authorized campus organizer wallet.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Chronological Audit Trail Timeline from Phase 7 */}
+        {/* Chronological Lifecycle Timeline */}
         {historyData && historyData.events && historyData.events.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <History className="w-4 h-4 text-indigo-400" />
-              <h3 className="text-base font-bold text-white">Chronological Lifecycle Timeline</h3>
-              <span className="text-[10px] text-slate-400 bg-slate-800 px-2 py-0.5 rounded font-mono">
-                {historyData.events.length} Events
+              <History className="w-4 h-4 text-stone-500" />
+              <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
+                Chronological Lifecycle Timeline
+              </h3>
+              <span className="text-[10px] text-stone-500 font-mono-code">
+                ({historyData.events.length} Historical Events)
               </span>
             </div>
 
-            <div className="rounded-2xl bg-slate-950 border border-slate-800 p-5 divide-y divide-slate-800/80">
+            <div className="rounded bg-stone-50 dark:bg-stone-950 border border-stone-200 dark:border-stone-800 p-5 divide-y divide-stone-200 dark:divide-stone-800">
               {historyData.events.map((evt: ActivityHistoryEvent, idx: number) => (
                 <div key={idx} className="py-3 first:pt-0 last:pb-0 flex items-start gap-3">
-                  <div className="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 mt-0.5">
-                    {evt.event_type === 'APPROVAL' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : evt.event_type === 'REJECTION' ? (
-                      <XCircle className="w-4 h-4 text-rose-400" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-amber-400" />
-                    )}
+                  <div className="w-7 h-7 rounded bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-800 flex items-center justify-center shrink-0 mt-0.5 text-xs font-bold">
+                    [0{idx + 1}]
                   </div>
                   <div className="space-y-0.5 text-xs flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">{evt.event_type}</span>
-                      <span className="text-slate-400 font-mono text-[11px]">{formatTimestamp(evt.timestamp)}</span>
+                      <span className="font-bold text-stone-900 dark:text-stone-100 uppercase">{evt.event_type}</span>
+                      <span className="text-stone-500 font-mono-code text-[11px]">{formatTimestamp(evt.timestamp)}</span>
                     </div>
-                    <p className="text-slate-300">{evt.description}</p>
-                    <div className="text-[11px] text-slate-500 font-mono">
-                      Actor: {evt.actor_address} {evt.tx_hash && `• TX: ${truncateAddress(evt.tx_hash, 6, 4)}`}
+                    <p className="text-stone-700 dark:text-stone-300 font-sans">{evt.description}</p>
+                    <div className="text-[11px] text-stone-500 font-mono-code">
+                      ACTOR: {evt.actor_address} {evt.tx_hash && `• TX: ${truncateAddress(evt.tx_hash, 6, 4)}`}
                     </div>
                   </div>
                 </div>
@@ -586,43 +516,44 @@ export const ActivityDetailsPage: React.FC = () => {
           </div>
         )}
 
-        {/* Public QR Verification Portal Badge */}
-        <div className="p-6 rounded-2xl bg-gradient-to-r from-slate-950 to-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center gap-6">
-          <div className="bg-white p-3 rounded-xl shadow-lg shrink-0 flex flex-col items-center">
+        {/* Public QR Verification Certificate Stamp */}
+        <div className="p-6 rounded bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 flex flex-col sm:flex-row items-center gap-6">
+          <div className="bg-white p-3 rounded shadow-md shrink-0 flex flex-col items-center">
             <QRCodeSVG id="activity-qr-svg" value={verificationUrl} size={130} level="M" />
           </div>
 
-          <div className="space-y-3 text-center sm:text-left flex-1">
-            <div className="flex items-center justify-center sm:justify-start gap-1.5 text-emerald-400 font-bold text-sm">
-              <QrCode className="w-4 h-4" />
-              <span>Public Verification QR Code</span>
+          <div className="space-y-3 text-center sm:text-left flex-1 font-mono-code">
+            <div className="flex items-center justify-center sm:justify-start gap-1.5 text-stone-900 dark:text-stone-100 font-bold text-sm uppercase">
+              <QrCode className="w-4 h-4 text-emerald-600" />
+              <span>Public Verification QR Attestation</span>
             </div>
-            <p className="text-xs text-slate-300 max-w-md leading-relaxed">
-              Anyone can scan this badge or visit the public verification portal without logging in. The verification portal queries the Tezos SmartPy contract state directly to prove record authenticity.
+            <p className="text-xs text-stone-600 dark:text-stone-400 leading-relaxed font-sans">
+              Scan this badge or share the public verification URL. Anyone can verify the authenticity of this
+              sustainability claim against the Tezos decentralized state with zero login requirements.
             </p>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3 pt-1">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 pt-1">
               <Link
                 to={`/verify?id=${activity.activity_id}`}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-300 hover:bg-emerald-500/20 font-semibold transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 text-xs font-bold uppercase tracking-wider transition-colors shadow-sm"
               >
-                <span>Open Public Verification Page</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <span>[ Open Public Portal ]</span>
+                <ExternalLink className="w-3.5 h-3.5 text-emerald-400" />
               </Link>
               <button
                 type="button"
                 onClick={downloadQRCode}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-300 dark:border-stone-700 text-xs font-bold uppercase tracking-wider transition-colors"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Download QR (PNG)</span>
+                <span>[ Download PNG ]</span>
               </button>
               <button
                 type="button"
                 onClick={printQRCode}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs text-slate-200 font-medium transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-300 dark:border-stone-700 text-xs font-bold uppercase tracking-wider transition-colors"
               >
                 <Printer className="w-3.5 h-3.5" />
-                <span>Print Badge</span>
+                <span>[ Print Folio ]</span>
               </button>
             </div>
           </div>
@@ -631,45 +562,45 @@ export const ActivityDetailsPage: React.FC = () => {
 
       {/* Evidence Preview Modal for Authorized Organizers */}
       {isPreviewModalOpen && protectedEvidenceUrl && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-950/80 backdrop-blur-sm font-mono-code">
+          <div className="bg-stone-50 dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-lg max-w-2xl w-full p-6 space-y-4 shadow-2xl text-stone-900 dark:text-stone-100">
+            <div className="flex items-center justify-between border-b border-stone-300 dark:border-stone-800 pb-3">
               <div className="flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-white text-base">
+                <ImageIcon className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-serif-editorial text-xl text-stone-900 dark:text-stone-100">
                   {activePhotoView === 'annotated' && activity.ai_annotated_path
-                    ? 'GreenAI Annotated Evidence Preview'
+                    ? 'GreenAI Annotated Evidence Metrology'
                     : 'Protected Photographic Evidence Preview'}
                 </h3>
               </div>
               <button
                 onClick={() => setIsPreviewModalOpen(false)}
-                className="text-slate-400 hover:text-white font-mono text-sm"
+                className="text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 text-xs px-2 py-1 rounded bg-stone-200 dark:bg-stone-800"
               >
-                ✕
+                [ CLOSE ]
               </button>
             </div>
 
             {activity.ai_annotated_path && (
-              <div className="flex items-center justify-center gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-center gap-2 bg-stone-100 dark:bg-stone-950 p-1.5 rounded border border-stone-300 dark:border-stone-800">
                 <button
                   type="button"
                   onClick={() => setActivePhotoView('original')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                  className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wider transition-colors ${
                     activePhotoView === 'original'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-950'
+                      : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                   }`}
                 >
-                  Original Evidence
+                  Raw Specimen
                 </button>
                 <button
                   type="button"
                   onClick={() => setActivePhotoView('annotated')}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors flex items-center gap-1 ${
+                  className={`px-3 py-1 rounded text-xs font-bold uppercase tracking-wider transition-colors flex items-center gap-1 ${
                     activePhotoView === 'annotated'
-                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                      : 'text-slate-400 hover:text-white'
+                      ? 'bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-950'
+                      : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                   }`}
                 >
                   <Sparkles className="w-3 h-3 text-emerald-400" />
@@ -678,7 +609,7 @@ export const ActivityDetailsPage: React.FC = () => {
               </div>
             )}
 
-            <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 flex items-center justify-center max-h-[480px]">
+            <div className="rounded overflow-hidden bg-stone-950 border border-stone-300 dark:border-stone-800 flex items-center justify-center max-h-[480px]">
               <img
                 src={
                   activePhotoView === 'annotated' && activity.ai_annotated_path
@@ -692,13 +623,13 @@ export const ActivityDetailsPage: React.FC = () => {
                 }}
               />
             </div>
-            <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
+            <div className="flex items-center justify-between text-xs text-stone-500 font-mono-code pt-2">
               <span>Digest: {truncateAddress(activity.evidence_hash, 10, 8)}</span>
               <button
                 onClick={() => setIsPreviewModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold"
+                className="px-4 py-2 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:text-stone-950 font-bold uppercase tracking-wider text-xs"
               >
-                Close
+                [ Dismiss Viewer ]
               </button>
             </div>
           </div>

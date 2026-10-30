@@ -3,21 +3,20 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWallet } from '../hooks/useWallet';
 import { useTheme } from '../context/ThemeContext';
 import { 
-  Leaf, 
   ShieldCheck, 
   LogOut, 
-  CheckCircle2, 
   AlertTriangle,
   QrCode,
   User,
-  Users,
+  UserPlus,
   X,
   Sun,
-  Moon
+  Moon,
+  Activity
 } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { wallet, disconnectWallet, switchRole, clearError, activities } = useWallet();
+  const { wallet, disconnectWallet, activities } = useWallet();
   const { theme, toggleTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
@@ -33,24 +32,24 @@ export const Navbar: React.FC = () => {
 
   const isActive = (path: string) => {
     return location.pathname === path
-      ? 'text-emerald-600 dark:text-emerald-400 border-b-2 border-emerald-500 font-semibold'
-      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors';
+      ? 'text-emerald-800 dark:text-emerald-300 border-b-2 border-emerald-800 dark:border-emerald-400 font-bold'
+      : 'text-stone-600 dark:text-stone-400 hover:text-stone-950 dark:hover:text-stone-100 transition-colors';
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 transition-colors duration-200">
+    <header className="sticky top-0 z-50 bg-[#FAF7F2]/95 dark:bg-[#0E0D0C]/95 backdrop-blur-md border-b border-stone-300/80 dark:border-stone-800 transition-colors duration-200">
       {/* Wallet Error Alert Banner */}
       {wallet.error && (
-        <div className="bg-rose-50 dark:bg-rose-950/90 border-b border-rose-200 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs py-2 px-4 flex items-center justify-between gap-2 shadow-sm animate-fadeIn">
+        <div className="bg-rose-50 dark:bg-rose-950/90 border-b border-rose-300 dark:border-rose-900 text-rose-900 dark:text-rose-200 text-xs py-2 px-4 flex items-center justify-between gap-2 shadow-sm font-mono">
           <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400 shrink-0" />
+            <AlertTriangle className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
             <span>
-              <strong>Wallet Notice:</strong> {wallet.error}
+              <strong>[ PROTOCOL NOTICE ]</strong> {wallet.error}
             </span>
           </div>
           <button
-            onClick={clearError}
-            className="text-rose-600 dark:text-rose-300 hover:text-rose-900 dark:hover:text-white p-1 rounded hover:bg-rose-100 dark:hover:bg-rose-900/50"
+            onClick={() => {}}
+            className="text-rose-700 dark:text-rose-300 hover:text-rose-950 dark:hover:text-white p-1 rounded"
             title="Dismiss error"
           >
             <X className="w-3.5 h-3.5" />
@@ -58,55 +57,73 @@ export const Navbar: React.FC = () => {
         </div>
       )}
 
-      {/* Protocol Limitation Banner */}
-      <div className="bg-amber-50 dark:bg-amber-950/60 border-b border-amber-200 dark:border-amber-800/40 text-amber-800 dark:text-amber-200 text-xs py-1.5 px-4 text-center flex items-center justify-center gap-2">
-        <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-        <span>
-          <strong>Limitation Notice:</strong> Blockchain proves recorded cryptographic signatures and contract state, not that a physical environmental activity definitely occurred.
-        </span>
+      {/* Top Editorial Archival Strip */}
+      <div className="border-b border-stone-200/90 dark:border-stone-800/80 py-1 px-4 sm:px-8 text-[11px] font-mono tracking-wider flex items-center justify-between text-stone-500 dark:text-stone-400 select-none bg-stone-100/60 dark:bg-stone-900/40">
+        <div className="flex items-center gap-3">
+          <span className="font-bold text-stone-800 dark:text-stone-200">[ ISSUE NO. 2026.IV ]</span>
+          <span className="hidden md:inline text-stone-400 dark:text-stone-600">|</span>
+          <span className="hidden md:inline uppercase">The Institutional Decentralized Archive</span>
+        </div>
+        <div className="flex items-center gap-4 text-[10px]">
+          <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400 animate-pulse"></span>
+            <span>TEZOS SHADOWNET // SYNCHRONIZED</span>
+          </span>
+          <span className="hidden sm:inline text-stone-400 dark:text-stone-600">|</span>
+          <span className="hidden sm:inline">STATE ENGINE: SMARTPY V2</span>
+        </div>
       </div>
 
+      {/* Main Masthead Header */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo */}
-          <Link to="/" className="flex items-center gap-2.5 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-400 flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
-              <Leaf className="w-5 h-5 text-slate-950" />
+        <div className="flex items-center justify-between h-20">
+          {/* Masthead Logo */}
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="w-10 h-10 rounded-sm bg-stone-900 dark:bg-stone-100 text-stone-50 dark:text-stone-950 flex items-center justify-center font-serif-editorial text-2xl font-bold border border-stone-700 dark:border-stone-300 group-hover:bg-emerald-900 dark:group-hover:bg-emerald-300 group-hover:text-emerald-100 dark:group-hover:text-stone-950 transition-colors shadow-sm">
+              GT
             </div>
             <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-bold text-lg text-slate-900 dark:text-white tracking-tight">GreenTrace</span>
-                <span className="text-[10px] bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-semibold">
-                  2.0
+              <div className="flex items-center gap-2">
+                <span className="font-display-serif text-xl sm:text-2xl font-bold text-stone-950 dark:text-stone-100 tracking-tight">
+                  GREENTRACE
+                </span>
+                <span className="text-[10px] font-mono tracking-widest px-1.5 py-0.5 border border-stone-400 dark:border-stone-700 text-stone-700 dark:text-stone-300 rounded-xs uppercase">
+                  VER. 2.0
                 </span>
               </div>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400">Tezos Campus Sustainability</p>
+              <p className="text-[10px] font-mono tracking-widest text-stone-500 dark:text-stone-400 uppercase">
+                Decentralized Ecological Chronicle
+              </p>
             </div>
           </Link>
 
-          {/* Navigation Links - ONLY VISIBLE WHEN CONNECTED */}
+          {/* Navigation Links (Visible when authenticated) */}
           {wallet.isConnected && wallet.role !== 'GUEST' && (
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+            <nav className="hidden md:flex items-center gap-6 text-xs font-mono tracking-wider">
               {wallet.role === 'STUDENT' && (
                 <>
-                  <Link to="/student" className={`py-2 ${isActive('/student')}`}>
-                    Student Dashboard
+                  <Link to="/student" className={`py-1.5 flex items-center gap-1.5 ${isActive('/student')}`}>
+                    <span>[ 01 ]</span>
+                    <span className="font-sans font-semibold">STUDENT DESK</span>
                   </Link>
-                  <Link to="/submit" className={`py-2 ${isActive('/submit')}`}>
-                    Submit Activity
+                  <Link to="/submit" className={`py-1.5 flex items-center gap-1.5 ${isActive('/submit')}`}>
+                    <span>[ 02 ]</span>
+                    <span className="font-sans font-semibold">DEPOSIT PROOF</span>
                   </Link>
                 </>
               )}
 
               {wallet.role === 'ORGANIZER' && (
                 <>
-                  <Link to="/organizer" className={`py-2 ${isActive('/organizer')}`}>
-                    Organizer Dashboard
+                  <Link to="/organizer" className={`py-1.5 flex items-center gap-1.5 ${isActive('/organizer')}`}>
+                    <span>[ 01 ]</span>
+                    <span className="font-sans font-semibold">ORGANIZER FORUM</span>
                   </Link>
-                  <Link to="/organizer" className={`py-2 flex items-center gap-1.5 ${isActive('/organizer')}`}>
-                    <span>Organizer Queue</span>
+                  <Link to="/organizer" className={`py-1.5 flex items-center gap-1.5 ${isActive('/organizer')}`}>
+                    <span>[ 02 ]</span>
+                    <span className="font-sans font-semibold">RATIFICATION QUEUE</span>
                     {pendingCount > 0 && (
-                      <span className="bg-amber-500 text-slate-950 text-xs px-1.5 py-0.2 rounded-full font-bold">
+                      <span className="bg-amber-600 dark:bg-amber-500 text-stone-950 text-[10px] px-1.5 py-0.2 rounded-xs font-mono font-bold">
                         {pendingCount}
                       </span>
                     )}
@@ -114,122 +131,85 @@ export const Navbar: React.FC = () => {
                 </>
               )}
 
-              <Link to="/history" className={`py-2 ${isActive('/history')}`}>
-                Activity History
+              <Link to="/history" className={`py-1.5 flex items-center gap-1.5 ${isActive('/history')}`}>
+                <Activity className="w-3.5 h-3.5 text-stone-400" />
+                <span className="font-sans font-semibold">CHRONICLE ARCHIVE</span>
               </Link>
 
-              <Link to="/verify" className={`py-2 flex items-center gap-1 ${isActive('/verify')}`}>
-                <QrCode className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                <span>Public QR Verify</span>
+              <Link to="/verify" className={`py-1.5 flex items-center gap-1.5 ${isActive('/verify')}`}>
+                <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span className="font-sans font-semibold">PUBLIC QR SCAN</span>
               </Link>
             </nav>
           )}
 
-          {/* Right Side Controls */}
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            {/* Dark / Light Mode Toggle Button */}
+          {/* Right Controls */}
+          <div className="flex items-center gap-3">
+            {/* Theme Toggle Button (Editorial Stamp Style) */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors"
-              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+              className="p-2 rounded-sm border border-stone-300 dark:border-stone-800 hover:border-stone-500 dark:hover:border-stone-600 bg-stone-100/80 dark:bg-stone-900/80 text-stone-700 dark:text-stone-300 transition-colors"
+              title={theme === 'dark' ? 'Switch to Light Parchment' : 'Switch to Archival Dark'}
               aria-label="Toggle Theme"
             >
               {theme === 'dark' ? (
                 <Sun className="w-4 h-4 text-amber-400" />
               ) : (
-                <Moon className="w-4 h-4 text-indigo-600" />
+                <Moon className="w-4 h-4 text-stone-800" />
               )}
             </button>
 
             {wallet.isConnected && wallet.role !== 'GUEST' ? (
               <>
-                {/* Network indicator */}
-                <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] text-slate-600 dark:text-slate-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>{wallet.network}</span>
-                </div>
-
-                {/* Role / Account Menu */}
+                {/* Account / Dossier Badge */}
                 <div className="relative">
                   <button
                     onClick={() => setShowRoleMenu(!showRoleMenu)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 transition-colors"
-                    title="Account options"
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-sm border border-stone-300 dark:border-stone-800 bg-stone-100/90 dark:bg-stone-900/90 text-stone-900 dark:text-stone-100 text-xs font-mono hover:border-stone-500 transition-colors"
+                    title="Account credentials"
                   >
                     {wallet.role === 'STUDENT' ? (
                       <>
                         <User className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                        <span className="font-semibold">{wallet.userName ? wallet.userName.split(' ')[0] : 'Student'}</span>
-                      </>
-                    ) : wallet.role === 'ORGANIZER' ? (
-                      <>
-                        <ShieldCheck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                        <span className="font-semibold">{wallet.userName ? wallet.userName.split(' ')[0] : 'Organizer'}</span>
+                        <span className="font-bold tracking-wider">
+                          CADRE: {wallet.userName ? wallet.userName.split(' ')[0].toUpperCase() : 'STUDENT'}
+                        </span>
                       </>
                     ) : (
                       <>
-                        <Users className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />
-                        <span>Guest</span>
+                        <ShieldCheck className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                        <span className="font-bold tracking-wider">
+                          ORGANIZER: {wallet.userName ? wallet.userName.split(' ')[0].toUpperCase() : 'COUNCIL'}
+                        </span>
                       </>
                     )}
                   </button>
 
                   {showRoleMenu && (
-                    <div className="absolute right-0 mt-2 w-72 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl py-2 z-50 text-slate-800 dark:text-slate-100 animate-fadeIn">
-                      <div className="px-3.5 py-2 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
-                        <span>Active Account</span>
-                        <span className="font-mono text-emerald-600 dark:text-emerald-400">{wallet.role}</span>
+                    <div className="absolute right-0 mt-2 w-80 rounded-sm bg-[#FAF7F2] dark:bg-[#141312] border border-stone-400 dark:border-stone-700 shadow-2xl py-3 z-50 text-stone-900 dark:text-stone-100 animate-fadeIn font-mono text-xs">
+                      <div className="px-4 py-2 border-b border-stone-300 dark:border-stone-800 text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-widest">
+                        Credentials Dossier
                       </div>
-
-                      <div className="px-3.5 py-2 text-xs border-b border-slate-100 dark:border-slate-800">
-                        <div className="font-semibold text-slate-900 dark:text-white">{wallet.userName || 'Campus User'}</div>
-                        <div className="font-mono text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                          {wallet.address || 'No wallet address'}
+                      <div className="px-4 py-3 space-y-1.5">
+                        <div className="text-sm font-serif-editorial font-bold text-stone-900 dark:text-stone-100">
+                          {wallet.userName || 'Verified Participant'}
+                        </div>
+                        {wallet.userEmail && (
+                          <div className="text-[11px] text-stone-600 dark:text-stone-400">
+                            {wallet.userEmail}
+                          </div>
+                        )}
+                        <div className="text-[10px] text-stone-500 break-all pt-1 border-t border-stone-200 dark:border-stone-800/80">
+                          {wallet.address}
                         </div>
                       </div>
 
-                      <div className="p-1.5 space-y-1">
-                        <button
-                          onClick={() => {
-                            switchRole('STUDENT');
-                            setShowRoleMenu(false);
-                            navigate('/student');
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs rounded-xl flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
-                            wallet.role === 'STUDENT' ? 'text-emerald-600 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-500/10' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-medium">Switch to Student View</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400">Alex Rivera (STU-2026-8941)</span>
-                          </div>
-                          {wallet.role === 'STUDENT' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />}
-                        </button>
-
-                        <button
-                          onClick={() => {
-                            switchRole('ORGANIZER');
-                            setShowRoleMenu(false);
-                            navigate('/organizer');
-                          }}
-                          className={`w-full text-left px-3 py-2 text-xs rounded-xl flex items-center justify-between hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors ${
-                            wallet.role === 'ORGANIZER' ? 'text-indigo-600 dark:text-indigo-400 font-semibold bg-indigo-50 dark:bg-indigo-500/10' : 'text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-medium">Switch to Organizer View</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400">Dr. Aris Thorne (Authorized)</span>
-                          </div>
-                          {wallet.role === 'ORGANIZER' && <CheckCircle2 className="w-3.5 h-3.5 text-indigo-500" />}
-                        </button>
-                      </div>
-
-                      <div className="pt-1 border-t border-slate-100 dark:border-slate-800 px-1.5">
+                      <div className="px-3 pt-2 border-t border-stone-300 dark:border-stone-800">
                         <button
                           onClick={handleLogout}
-                          className="w-full text-left px-3 py-2 text-xs text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl flex items-center justify-between transition-colors font-semibold"
+                          className="w-full text-left px-3 py-2 text-xs text-rose-700 dark:text-rose-400 hover:bg-rose-500/10 rounded-xs flex items-center justify-between transition-colors font-bold"
                         >
-                          <span>Log Out & Return to Login</span>
+                          <span>[ DISENGAGE SESSION ]</span>
                           <LogOut className="w-3.5 h-3.5" />
                         </button>
                       </div>
@@ -237,25 +217,41 @@ export const Navbar: React.FC = () => {
                   )}
                 </div>
 
-                {/* Direct Logout / Disconnect Button */}
+                {/* Direct Logout Button */}
                 <button
                   onClick={handleLogout}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-semibold transition-colors"
-                  title="Log out and return to login screen"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-rose-300 dark:border-rose-900/60 bg-rose-50/60 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/40 text-rose-800 dark:text-rose-300 text-xs font-mono transition-colors"
+                  title="Sign out and return to portal"
                 >
                   <LogOut className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Log Out</span>
+                  <span>LOG OUT</span>
                 </button>
               </>
             ) : (
-              /* Public / Logged Out View: Clean Login Button */
-              <Link
-                to="/login"
-                className="flex items-center gap-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold px-4 py-2 rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all hover:scale-102"
-              >
-                <User className="w-3.5 h-3.5" />
-                <span>Log In</span>
-              </Link>
+              /* Public / Logged Out Controls */
+              <div className="flex items-center gap-2 font-mono">
+                <Link
+                  to="/verify"
+                  className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-stone-300 dark:border-stone-800 hover:border-stone-500 dark:hover:border-stone-600 text-stone-700 dark:text-stone-300 text-xs font-semibold transition-colors"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>PUBLIC VERIFY</span>
+                </Link>
+                <Link
+                  to="/login?mode=signin"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-stone-300 dark:border-stone-800 hover:bg-stone-200/50 dark:hover:bg-stone-800/50 text-stone-800 dark:text-stone-200 text-xs font-semibold transition-colors"
+                >
+                  <User className="w-3.5 h-3.5" />
+                  <span>SIGN IN</span>
+                </Link>
+                <Link
+                  to="/login?mode=signup"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-sm bg-stone-900 hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-white text-stone-50 dark:text-stone-950 font-bold text-xs shadow-sm transition-all hover:translate-y-[-1px]"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>ENROLL NOW</span>
+                </Link>
+              </div>
             )}
           </div>
         </div>

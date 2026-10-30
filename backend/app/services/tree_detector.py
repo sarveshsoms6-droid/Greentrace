@@ -22,10 +22,37 @@ except ImportError:
 
 MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024  # 10MB
 SUPPORTED_IMAGE_FORMATS = {"JPEG", "JPG", "PNG", "WEBP"}
-ANNOTATED_UPLOADS_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "..", "..", "uploads", "annotated")
+
+_UPLOAD_BASE = os.getenv("UPLOAD_DIRECTORY", os.path.join(os.path.dirname(__file__), "..", "..", "uploads"))
+ANNOTATED_UPLOADS_DIR = os.getenv(
+    "ANNOTATED_UPLOADS_DIR",
+    os.path.abspath(os.path.join(_UPLOAD_BASE, "annotated"))
 )
 os.makedirs(ANNOTATED_UPLOADS_DIR, exist_ok=True)
+
+
+def resolve_yolo_model_path(custom_path: Optional[str] = None) -> str:
+    """Finds the YOLO model weights file across candidate locations."""
+    env_path = os.getenv("MODEL_PATH") or os.getenv("YOLO_MODEL_PATH")
+    if env_path and os.path.exists(env_path):
+        return os.path.abspath(env_path)
+
+    if custom_path and os.path.exists(custom_path):
+        return os.path.abspath(custom_path)
+
+    target_name = custom_path or "yolov8s-worldv2.pt"
+    candidates = [
+        target_name,
+        os.path.join(os.path.dirname(__file__), "..", "..", target_name),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", target_name),
+        os.path.join(os.path.dirname(__file__), "..", "..", "weights", target_name),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "weights", target_name),
+    ]
+    for cand in candidates:
+        if os.path.exists(cand):
+            return os.path.abspath(cand)
+
+    return target_name
 
 
 class BaseTreeDetector(ABC):
@@ -45,10 +72,10 @@ class YOLOWorldTreeDetector(BaseTreeDetector):
 
     def __init__(
         self,
-        model_path: str = "yolov8s-worldv2.pt",
+        model_path: Optional[str] = None,
         confidence_threshold: float = 0.20,
     ):
-        self.model_path = model_path
+        self.model_path = resolve_yolo_model_path(model_path)
         self.confidence_threshold = confidence_threshold
         self.model_name = "YOLO-World v8s (Open-Vocabulary Tree Detector)"
         self.model_version = "8.4.193 / yolov8s-worldv2.pt"

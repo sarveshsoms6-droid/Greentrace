@@ -212,6 +212,40 @@ export interface OrganizerCheckResponse {
   message: string;
 }
 
+export interface UserProfile {
+  id: number;
+  email: string;
+  name: string;
+  role: 'STUDENT' | 'ORGANIZER';
+  student_id?: string | null;
+  department?: string | null;
+  wallet_address?: string | null;
+  created_at: string;
+  last_login?: string | null;
+}
+
+export interface AuthResponse {
+  success: boolean;
+  message: string;
+  user: UserProfile;
+  token: string;
+}
+
+export interface SignUpPayload {
+  email: string;
+  name: string;
+  password: string;
+  role: 'STUDENT' | 'ORGANIZER';
+  student_id?: string;
+  department?: string;
+  wallet_address?: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
 export class ApiError extends Error {
   status: number;
   detail: string;
@@ -224,7 +258,11 @@ export class ApiError extends Error {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== '')
+  ? import.meta.env.VITE_API_BASE_URL
+  : (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+      ? ''
+      : 'http://localhost:8000');
 
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const controller = new AbortController();
@@ -407,8 +445,13 @@ export const api = {
     return `${API_BASE_URL}/api/evidence/${encodeURIComponent(evidenceHash)}/file${query}`;
   },
 
-  getAnnotatedEvidenceFileUrl(filename: string): string {
-    return `${API_BASE_URL}/api/evidence/annotated/${encodeURIComponent(filename)}`;
+  getAnnotatedEvidenceFileUrl(pathOrFilename: string): string {
+    if (!pathOrFilename) return '';
+    if (pathOrFilename.startsWith('http://') || pathOrFilename.startsWith('https://')) {
+      return pathOrFilename;
+    }
+    const cleanFilename = pathOrFilename.split('/').pop() || pathOrFilename;
+    return `${API_BASE_URL}/api/evidence/annotated/${encodeURIComponent(cleanFilename)}`;
   },
 
   async detectTrees(file: File): Promise<TreeDetectionResult> {
@@ -456,5 +499,25 @@ export const api = {
 
   async verifyPublicActivity(id: string): Promise<PublicVerificationApiResponse> {
     return fetchJson<PublicVerificationApiResponse>(`${API_BASE_URL}/api/public/verify/${encodeURIComponent(id)}`);
+  },
+
+  async signUp(payload: SignUpPayload): Promise<AuthResponse> {
+    return fetchJson<AuthResponse>(`${API_BASE_URL}/api/auth/signup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async login(payload: LoginPayload): Promise<AuthResponse> {
+    return fetchJson<AuthResponse>(`${API_BASE_URL}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getUserProfile(userId: number): Promise<UserProfile> {
+    return fetchJson<UserProfile>(`${API_BASE_URL}/api/auth/user/${encodeURIComponent(userId)}`);
   },
 };

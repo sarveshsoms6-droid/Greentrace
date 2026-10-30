@@ -3,30 +3,141 @@
 @variant dark (&:where(.dark, .dark *));
 
 @layer base {
+  :root {
+    --font-serif: "Instrument Serif", "Fraunces", Georgia, serif;
+    --font-display: "Fraunces", "Instrument Serif", Georgia, serif;
+    --font-sans: "Plus Jakarta Sans", "Space Grotesk", system-ui, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  }
+
   body {
-    @apply bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen antialiased transition-colors duration-200;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: #FAF7F2;
+    color: #1C1917;
+    font-family: var(--font-sans);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    transition: background-color 0.25s ease, color 0.25s ease;
+  }
+
+  .dark body {
+    background-color: #0E0D0C;
+    color: #F5F2EB;
   }
 }
 
-/* Custom scrollbar */
+/* Typography Utility Classes */
+.font-serif-editorial {
+  font-family: "Instrument Serif", "Fraunces", Georgia, serif;
+}
+
+.font-display-serif {
+  font-family: "Fraunces", "Instrument Serif", Georgia, serif;
+}
+
+.font-mono-code {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+}
+
+.font-grotesk {
+  font-family: "Space Grotesk", "Plus Jakarta Sans", sans-serif;
+}
+
+/* Editorial Newspaper & Retro Styling Utilities */
+.editorial-border {
+  border: 1px solid rgba(41, 37, 36, 0.15);
+}
+.dark .editorial-border {
+  border: 1px solid rgba(245, 242, 235, 0.12);
+}
+
+.editorial-border-b {
+  border-bottom: 1px solid rgba(41, 37, 36, 0.15);
+}
+.dark .editorial-border-b {
+  border-bottom: 1px solid rgba(245, 242, 235, 0.12);
+}
+
+.editorial-border-t {
+  border-top: 1px solid rgba(41, 37, 36, 0.15);
+}
+.dark .editorial-border-t {
+  border-top: 1px solid rgba(245, 242, 235, 0.12);
+}
+
+.editorial-border-r {
+  border-right: 1px solid rgba(41, 37, 36, 0.15);
+}
+.dark .editorial-border-r {
+  border-right: 1px solid rgba(245, 242, 235, 0.12);
+}
+
+.editorial-card {
+  background-color: #FFFFFF;
+  border: 1px solid rgba(41, 37, 36, 0.12);
+  box-shadow: 0 1px 3px rgba(41, 37, 36, 0.04), 0 4px 12px rgba(41, 37, 36, 0.03);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.dark .editorial-card {
+  background-color: #141312;
+  border: 1px solid rgba(245, 242, 235, 0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.editorial-card:hover {
+  border-color: rgba(23, 77, 56, 0.35);
+  transform: translateY(-1px);
+}
+.dark .editorial-card:hover {
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+/* Archival Stamp Badge */
+.stamp-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 2px;
+  border: 1px solid currentColor;
+}
+
+/* Retro Paper Texture / Subtle Grid Background */
+.paper-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(41, 37, 36, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(41, 37, 36, 0.04) 1px, transparent 1px);
+}
+.dark .paper-grid {
+  background-image: 
+    linear-gradient(to right, rgba(245, 242, 235, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(245, 242, 235, 0.03) 1px, transparent 1px);
+}
+
+/* Custom Editorial Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 4px;
+  background: #D6D0C4;
+  border-radius: 2px;
 }
 .dark ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #2C2A26;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: #A8A29E;
 }
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: #475569;
+  background: #44403C;
 }

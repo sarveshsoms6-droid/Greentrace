@@ -1,538 +1,623 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { useWallet } from '../context/WalletContext';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useWallet } from '../hooks/useWallet';
+import { api, ApiError } from '../services/api';
 import { SAMPLE_ORGANIZER_ADDRESS, SAMPLE_STUDENT_ADDRESS } from '../utils/mockData';
-import { truncateAddress } from '../utils/crypto';
 import {
   ShieldCheck,
   Sparkles,
   ArrowRight,
-  Lock,
-  Clock,
-  CheckCircle2,
+  Mail,
+  User,
+  GraduationCap,
+  Building2,
   Wallet,
-  BadgeCheck,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
   KeyRound,
-  GraduationCap
+  UserPlus,
+  LogIn,
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-  const {
-    loginAsStudent,
-    loginAsOrganizer,
-    submitOrganizerPermissionRequest,
-    connectWallet,
-    organizerRequests,
-  } = useWallet();
+  const [searchParams] = useSearchParams();
+  const { loginWithBackendUser, connectWallet, loginAsStudent, loginAsOrganizer } = useWallet();
 
-  const [activeTab, setActiveTab] = useState<'STUDENT' | 'ORGANIZER'>('STUDENT');
+  // Mode: 'SIGNIN' | 'SIGNUP'
+  const initialMode = searchParams.get('mode') === 'signup' ? 'SIGNUP' : 'SIGNIN';
+  const initialRole = searchParams.get('role')?.toUpperCase() === 'ORGANIZER' ? 'ORGANIZER' : 'STUDENT';
 
-  // Student Sign-In Form State (empty by default)
-  const [studentName, setStudentName] = useState('');
+  const [authMode, setAuthMode] = useState<'SIGNIN' | 'SIGNUP'>(initialMode);
+  const [role, setRole] = useState<'STUDENT' | 'ORGANIZER'>(initialRole);
+
+  // Common Form States
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
   const [studentId, setStudentId] = useState('');
-  const [studentEmail, setStudentEmail] = useState('');
+  const [department, setDepartment] = useState('');
+  const [walletAddress, setWalletAddress] = useState('');
 
-  // Organizer Sign-In Form State (empty by default)
-  const [orgIdentifier, setOrgIdentifier] = useState('');
-  const [orgLoginError, setOrgLoginError] = useState<string | null>(null);
+  // UI state
+  const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Organizer Permission Request Form State
-  const [showRequestForm, setShowRequestForm] = useState(false);
-  const [orgName, setOrgName] = useState('');
-  const [orgDept, setOrgDept] = useState('');
-  const [orgEmail, setOrgEmail] = useState('');
-  const [orgWallet, setOrgWallet] = useState('');
-  const [orgReason, setOrgReason] = useState('');
-  const [requestSubmitted, setRequestSubmitted] = useState<boolean>(false);
-  const [submittedRequestId, setSubmittedRequestId] = useState<string | null>(null);
+  // Sync mode from search params if query changes
+  useEffect(() => {
+    const qMode = searchParams.get('mode');
+    if (qMode === 'signup') {
+      setAuthMode('SIGNUP');
+    } else if (qMode === 'signin') {
+      setAuthMode('SIGNIN');
+    }
+    const qRole = searchParams.get('role')?.toUpperCase();
+    if (qRole === 'ORGANIZER' || qRole === 'STUDENT') {
+      setRole(qRole);
+    }
+  }, [searchParams]);
 
-  // Handle student login/activation
-  const handleStudentLogin = (e: React.FormEvent) => {
+  // Handle Login submission
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!studentName.trim()) return;
+    setErrorMessage(null);
+    setSuccessMessage(null);
 
-    const trimmedName = studentName.trim();
-    const trimmedId = studentId.trim();
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      setErrorMessage('Please enter both your registered institutional email and access credential.');
+      return;
+    }
 
-    // Check if user is entering the pre-configured student credentials
-    const isAlexRivera =
-      trimmedName.toLowerCase().includes('alex') &&
-      trimmedName.toLowerCase().includes('rivera');
-    const isAlexId = trimmedId.toUpperCase() === 'STU-2026-8941';
+    setIsLoading(true);
+    try {
+      const res = await api.login({
+        email: cleanEmail,
+        password: password,
+      });
 
-    if (isAlexRivera || isAlexId) {
-      loginAsStudent('Alex Rivera', 'STU-2026-8941', SAMPLE_STUDENT_ADDRESS);
+      setSuccessMessage(`Session ratified for ${res.user.name}. Entering portal...`);
+      loginWithBackendUser(res.user, res.token);
+
+      setTimeout(() => {
+        if (res.user.role === 'ORGANIZER') {
+          navigate('/organizer');
+        } else {
+          navigate('/student');
+        }
+      }, 500);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        setErrorMessage(err.message || 'Authentication rejected. Verify institutional credentials.');
+      } else {
+        // Fallback for simulated offline credentials if backend server is not running
+        if (cleanEmail.toLowerCase().includes('thorne') || cleanEmail.toLowerCase() === 'a.thorne@campus.edu') {
+          loginAsOrganizer(SAMPLE_ORGANIZER_ADDRESS, 'Dr. Aris Thorne');
+          navigate('/organizer');
+          return;
+        }
+        if (cleanEmail.toLowerCase().includes('alex') || cleanEmail.toLowerCase() === 'alex.rivera@campus.edu') {
+          loginAsStudent('Alex Rivera', 'STU-2026-8941', SAMPLE_STUDENT_ADDRESS);
+          navigate('/student');
+          return;
+        }
+        setErrorMessage('Unable to contact authentication server. Check network connectivity.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Handle Sign-Up submission
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim();
+    const cleanPassword = password;
+
+    if (!cleanName || !cleanEmail || !cleanPassword) {
+      setErrorMessage('Please provide your full legal name, institutional email, and secure credential.');
+      return;
+    }
+
+    if (cleanPassword.length < 6) {
+      setErrorMessage('Access credential must contain at least 6 characters.');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const res = await api.signUp({
+        name: cleanName,
+        email: cleanEmail,
+        password: cleanPassword,
+        role: role,
+        student_id: role === 'STUDENT' ? studentId.trim() || undefined : undefined,
+        department: role === 'ORGANIZER' ? department.trim() || undefined : undefined,
+        wallet_address: walletAddress.trim() || undefined,
+      });
+
+      setSuccessMessage(`Cadre record created successfully for ${res.user.name}. Initializing workspace...`);
+      loginWithBackendUser(res.user, res.token);
+
+      setTimeout(() => {
+        if (res.user.role === 'ORGANIZER') {
+          navigate('/organizer');
+        } else {
+          navigate('/student');
+        }
+      }, 600);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        if (err.status === 409) {
+          setErrorMessage('An account associated with this institutional email already exists. Please switch to Sign In.');
+        } else {
+          setErrorMessage(err.message || 'Cadre enrollment failed. Please verify submission fields.');
+        }
+      } else {
+        setErrorMessage('Failed to connect to authentication server. Please retry.');
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fast Fill Demo Accounts
+  const handleDemoFill = (demoRole: 'STUDENT' | 'ORGANIZER') => {
+    setErrorMessage(null);
+    if (authMode === 'SIGNIN') {
+      if (demoRole === 'STUDENT') {
+        setEmail('alex.rivera@campus.edu');
+        setPassword('Pass@123');
+      } else {
+        setEmail('a.thorne@campus.edu');
+        setPassword('Pass@123');
+      }
     } else {
-      loginAsStudent(trimmedName, trimmedId || undefined);
+      setRole(demoRole);
+      if (demoRole === 'STUDENT') {
+        setName('Alex Rivera');
+        setEmail(`student.${Math.floor(1000 + Math.random() * 9000)}@campus.edu`);
+        setPassword('StudentPass@2026');
+        setStudentId(`STU-2026-${Math.floor(1000 + Math.random() * 9000)}`);
+      } else {
+        setName('Dr. Elena Rostova');
+        setEmail(`organizer.${Math.floor(1000 + Math.random() * 9000)}@campus.edu`);
+        setPassword('OrganizerPass@2026');
+        setDepartment('School of Earth & Environmental Sciences');
+      }
     }
-
-    navigate('/student');
-  };
-
-  // Handle organizer login
-  const handleOrganizerLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setOrgLoginError(null);
-    const id = orgIdentifier.trim();
-
-    if (!id) {
-      setOrgLoginError('Please enter your Tezos wallet address or campus email.');
-      return;
-    }
-
-    // Check if entering the pre-authorized organizer credentials
-    const isArisThorne =
-      id.toLowerCase() === SAMPLE_ORGANIZER_ADDRESS.toLowerCase() ||
-      id.toLowerCase() === 'a.thorne@campus.edu' ||
-      id.toLowerCase().includes('aris') ||
-      id.toLowerCase().includes('thorne');
-
-    if (isArisThorne) {
-      loginAsOrganizer(SAMPLE_ORGANIZER_ADDRESS, 'Dr. Aris Thorne');
-      navigate('/organizer');
-      return;
-    }
-
-    // If entering another valid tz1/tz2/tz3 address
-    if (id.startsWith('tz1') || id.startsWith('tz2') || id.startsWith('tz3')) {
-      loginAsOrganizer(id, 'Campus Organizer');
-      navigate('/organizer');
-      return;
-    }
-
-    // Non-wallet identifier provided that is not registered
-    setOrgLoginError(
-      'Account not recognized as a pre-authorized organizer. Enter your registered wallet address (tz1...) or submit a permission request below.'
-    );
-  };
-
-  // Handle organizer permission request submission
-  const handleOrganizerRequestSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!orgName.trim() || !orgDept.trim() || !orgEmail.trim()) return;
-
-    const req = submitOrganizerPermissionRequest({
-      name: orgName.trim(),
-      email: orgEmail.trim(),
-      department: orgDept.trim(),
-      walletAddress: orgWallet.trim() || `tz1Req${Math.random().toString(36).substring(2, 10).padEnd(30, '0')}`,
-      reason: orgReason.trim() || 'Faculty advisor for campus sustainability review.',
-    });
-
-    setSubmittedRequestId(req.id);
-    setRequestSubmitted(true);
   };
 
   return (
-    <div className="max-w-4xl mx-auto py-8 sm:py-12 space-y-8">
-      {/* Top Header */}
+    <div className="max-w-4xl mx-auto py-6 sm:py-10 space-y-8 animate-fadeIn">
+      {/* Top Archival Header */}
       <div className="text-center space-y-3">
-        <div className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-xs font-bold tracking-wide uppercase">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Campus Portal Authentication</span>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xs bg-stone-200/80 dark:bg-stone-800/80 border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 text-xs font-mono font-bold tracking-widest uppercase">
+          <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+          <span>INSTITUTIONAL CADRE REGISTRATION // PROTOCOL 2.0</span>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-          Sign In to GreenTrace 2.0
+        <h1 className="text-3xl sm:text-5xl font-display-serif font-bold text-stone-950 dark:text-stone-100 tracking-tight">
+          {authMode === 'SIGNIN' ? 'Access the Protocol Archive' : 'Enroll in the Sustainability Cadre'}
         </h1>
-        <p className="text-sm text-slate-600 dark:text-slate-400 max-w-2xl mx-auto leading-relaxed">
-          Access your campus sustainability workspace to record impact actions, mint verifiable proofs, or manage authorized organizer approvals.
+        <p className="text-sm sm:text-base text-stone-600 dark:text-stone-400 max-w-xl mx-auto leading-relaxed font-sans">
+          {authMode === 'SIGNIN'
+            ? 'Present your registered institutional credentials to access verified evidence records, sign ratification decisions, or inspect decentralized impact metrics.'
+            : 'Register as an active Student Researcher to deposit proof of physical ecological action, or as an Authorized Faculty Coordinator to oversee on-chain ratification.'}
         </p>
       </div>
 
-      {/* Role Navigation Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-800 justify-center">
+      {/* Mode Switch Tabs (Sign In vs Sign Up) */}
+      <div className="flex border-b border-stone-300 dark:border-stone-800 justify-center font-mono">
         <button
+          type="button"
           onClick={() => {
-            setActiveTab('STUDENT');
-            setOrgLoginError(null);
+            setAuthMode('SIGNIN');
+            setErrorMessage(null);
+            setSuccessMessage(null);
           }}
-          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all ${
-            activeTab === 'STUDENT'
-              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-500/5'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          className={`flex items-center gap-2 px-8 py-3 text-xs tracking-wider uppercase font-bold border-b-2 transition-all ${
+            authMode === 'SIGNIN'
+              ? 'border-stone-900 dark:border-stone-100 text-stone-950 dark:text-stone-50 bg-stone-200/40 dark:bg-stone-800/40'
+              : 'border-transparent text-stone-500 hover:text-stone-900 dark:hover:text-stone-200'
           }`}
         >
-          <GraduationCap className="w-4 h-4" />
-          <span>Student Portal</span>
+          <LogIn className="w-4 h-4" />
+          <span>[ 01 // AUTHENTICATE ]</span>
         </button>
 
         <button
+          type="button"
           onClick={() => {
-            setActiveTab('ORGANIZER');
-            setOrgLoginError(null);
+            setAuthMode('SIGNUP');
+            setErrorMessage(null);
+            setSuccessMessage(null);
           }}
-          className={`flex items-center gap-2 px-6 py-3.5 text-sm font-semibold border-b-2 transition-all ${
-            activeTab === 'ORGANIZER'
-              ? 'border-indigo-500 text-indigo-600 dark:text-indigo-400 bg-indigo-500/5'
-              : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+          className={`flex items-center gap-2 px-8 py-3 text-xs tracking-wider uppercase font-bold border-b-2 transition-all ${
+            authMode === 'SIGNUP'
+              ? 'border-stone-900 dark:border-stone-100 text-stone-950 dark:text-stone-50 bg-stone-200/40 dark:bg-stone-800/40'
+              : 'border-transparent text-stone-500 hover:text-stone-900 dark:hover:text-stone-200'
           }`}
         >
-          <ShieldCheck className="w-4 h-4" />
-          <span>Organizer Portal</span>
+          <UserPlus className="w-4 h-4" />
+          <span>[ 02 // CADRE ENROLLMENT ]</span>
         </button>
       </div>
 
-      {/* TAB 1: STUDENT LOGIN & INSTANT ACTIVATION */}
-      {activeTab === 'STUDENT' && (
-        <div className="grid md:grid-cols-5 gap-6">
-          <div className="md:col-span-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-sm">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Instant Student Activation</span>
-              </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                Student Sign In
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Student accounts are activated immediately with zero admin approval needed. Enter your credentials to access your dashboard.
-              </p>
-            </div>
+      {/* Error & Success Feedback Banners */}
+      {errorMessage && (
+        <div className="p-4 rounded-xs bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900 text-rose-900 dark:text-rose-200 text-xs font-mono flex items-start gap-3 shadow-xs animate-fadeIn">
+          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">{errorMessage}</p>
+            {errorMessage.includes('already exists') && (
+              <button
+                type="button"
+                onClick={() => setAuthMode('SIGNIN')}
+                className="mt-1 text-[11px] text-rose-700 dark:text-rose-300 underline font-bold hover:text-rose-950"
+              >
+                Switch to Sign In &rarr;
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
-            <form onSubmit={handleStudentLogin} className="space-y-4">
+      {successMessage && (
+        <div className="p-4 rounded-xs bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 text-xs font-mono flex items-center gap-3 shadow-xs animate-fadeIn">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <p className="font-semibold">{successMessage}</p>
+        </div>
+      )}
+
+      <div className="grid md:grid-cols-5 gap-8">
+        {/* Main Form Box (Editorial Card) */}
+        <div className="md:col-span-3 bg-white dark:bg-[#141312] border border-stone-300 dark:border-stone-800 rounded-xs p-6 sm:p-8 space-y-6 shadow-sm">
+          {/* TAB 1: SIGN IN */}
+          {authMode === 'SIGNIN' ? (
+            <form onSubmit={handleLogin} className="space-y-4 font-mono">
+              <div className="space-y-1 pb-1 border-b border-stone-200 dark:border-stone-800">
+                <h2 className="text-xl font-display-serif font-bold text-stone-900 dark:text-stone-100">
+                  Institutional Dossier Access
+                </h2>
+                <p className="text-xs text-stone-500 font-sans">
+                  Provide your accredited university email address and passphrase to access your active workspace.
+                </p>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Full Student Name *
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <Mail className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Campus Email Identifier</span>
                 </label>
                 <input
-                  type="text"
+                  type="email"
                   required
-                  value={studentName}
-                  onChange={(e) => setStudentName(e.target.value)}
-                  placeholder="e.g. Alex Rivera"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. alex.rivera@campus.edu"
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
                 />
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Student ID Number
-                  </label>
-                  <input
-                    type="text"
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                    placeholder="e.g. STU-2026-8941"
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 font-mono transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Campus Email
-                  </label>
-                  <input
-                    type="email"
-                    value={studentEmail}
-                    onChange={(e) => setStudentEmail(e.target.value)}
-                    placeholder="e.g. alex.rivera@campus.edu"
-                    className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-                  />
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <KeyRound className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Access Credential</span>
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                />
+              </div>
+
+              {/* Quick Demo Accounts Helper */}
+              <div className="p-3.5 rounded-xs bg-stone-100/70 dark:bg-stone-950/70 border border-stone-300 dark:border-stone-800 space-y-2">
+                <span className="text-[10px] font-bold text-stone-500 uppercase tracking-widest block">
+                  [ SPECIMEN CREDENTIALS // PRE-SEEDED ]
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDemoFill('STUDENT')}
+                    className="text-[11px] px-2.5 py-1 rounded-xs bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 hover:border-emerald-700 text-stone-800 dark:text-stone-200 transition-colors"
+                  >
+                    Alex Rivera (Student)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDemoFill('ORGANIZER')}
+                    className="text-[11px] px-2.5 py-1 rounded-xs bg-white dark:bg-stone-900 border border-stone-300 dark:border-stone-700 hover:border-amber-700 text-stone-800 dark:text-stone-200 transition-colors"
+                  >
+                    Dr. Aris Thorne (Organizer)
+                  </button>
                 </div>
               </div>
 
               <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full py-3 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                  disabled={isLoading}
+                  className="w-full py-3.5 px-4 rounded-xs bg-stone-900 hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-white text-stone-50 dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                 >
-                  <span>Sign In to Student Dashboard</span>
-                  <ArrowRight className="w-4 h-4" />
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>AUTHENTICATING WITH ARCHIVE...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>SIGN IN TO WORKSPACE</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-center pt-2 text-xs font-sans text-stone-500">
+                <span>Not registered in the institutional cadre? </span>
+                <button
+                  type="button"
+                  onClick={() => setAuthMode('SIGNUP')}
+                  className="text-stone-900 dark:text-stone-100 font-bold underline font-mono text-[11px]"
+                >
+                  [ ENROLL CADRE ACCOUNT ]
                 </button>
               </div>
             </form>
-          </div>
-
-          {/* Sidebar */}
-          <div className="md:col-span-2 space-y-4">
-            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-3.5 shadow-sm">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <BadgeCheck className="w-4 h-4 text-emerald-500" />
-                <span>Student Capabilities</span>
-              </h3>
-              <ul className="space-y-2.5 text-xs text-slate-600 dark:text-slate-300">
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 font-bold">•</span>
-                  <span>Instant access without waiting for admin validation.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 font-bold">•</span>
-                  <span>Direct photographic upload with instant SHA-256 fingerprinting.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 font-bold">•</span>
-                  <span>Personal dashboard tracking approved trees, recycling, and carbon savings.</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-emerald-500 font-bold">•</span>
-                  <span>Downloadable and verifiable QR code proof badges.</span>
-                </li>
-              </ul>
-            </div>
-
-            {/* Beacon Wallet option */}
-            <div className="bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 space-y-3 shadow-sm">
-              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Wallet className="w-3.5 h-3.5 text-teal-500" />
-                <span>Tezos Wallet Login</span>
-              </h4>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Sign in directly using Temple or Kukai browser wallet on Tezos Shadownet:
-              </p>
-              <button
-                type="button"
-                onClick={() => connectWallet('STUDENT')}
-                className="w-full py-2.5 px-3 rounded-xl bg-teal-50 hover:bg-teal-100 dark:bg-teal-500/10 dark:hover:bg-teal-500/20 border border-teal-200 dark:border-teal-500/30 text-teal-700 dark:text-teal-300 text-xs font-semibold transition-colors"
-              >
-                Connect Temple / Beacon Wallet
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 2: ORGANIZER LOGIN & PERMISSION REQUEST */}
-      {activeTab === 'ORGANIZER' && (
-        <div className="space-y-6">
-          {/* Organizer Sign-in Box */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 font-bold text-sm">
-                <ShieldCheck className="w-4 h-4" />
-                <span>Authorized Organizer Sign In</span>
+          ) : (
+            /* TAB 2: SIGN UP */
+            <form onSubmit={handleSignUp} className="space-y-4 font-mono">
+              <div className="space-y-1 pb-1 border-b border-stone-200 dark:border-stone-800">
+                <h2 className="text-xl font-display-serif font-bold text-stone-900 dark:text-stone-100">
+                  Cadre Enrollment Registry
+                </h2>
+                <p className="text-xs text-stone-500 font-sans">
+                  Select your functional role and complete the registry fields below to receive your cryptographic participant identifier.
+                </p>
               </div>
-              <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                Organizer Access Portal
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Organizer accounts possess cryptographic signing rights to review and verify student activities on the Tezos smart contract.
-              </p>
-            </div>
 
-            {orgLoginError && (
-              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-300 text-xs">
-                {orgLoginError}
-              </div>
-            )}
-
-            <form onSubmit={handleOrganizerLogin} className="space-y-4">
+              {/* Role Selection Tabs */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                  Authorized Tezos Wallet Address or Registered Email *
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-2 uppercase tracking-wider">
+                  Select Institutional Cadre *
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRole('STUDENT')}
+                    className={`p-3 rounded-xs border text-left transition-all ${
+                      role === 'STUDENT'
+                        ? 'border-stone-900 dark:border-stone-100 bg-stone-100 dark:bg-stone-900 text-stone-950 dark:text-stone-50'
+                        : 'border-stone-300 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-950/50 text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <GraduationCap className="w-4 h-4 text-emerald-700 dark:text-emerald-400" />
+                      <span className="text-[10px]">[ CADRE 01 ]</span>
+                    </div>
+                    <div className="text-xs font-bold font-display-serif">Student Researcher</div>
+                    <div className="text-[10px] text-stone-500 font-sans">Deposit proofs & earn badges</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setRole('ORGANIZER')}
+                    className={`p-3 rounded-xs border text-left transition-all ${
+                      role === 'ORGANIZER'
+                        ? 'border-stone-900 dark:border-stone-100 bg-stone-100 dark:bg-stone-900 text-stone-950 dark:text-stone-50'
+                        : 'border-stone-300 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-950/50 text-stone-600 dark:text-stone-400'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <ShieldCheck className="w-4 h-4 text-amber-700 dark:text-amber-400" />
+                      <span className="text-[10px]">[ CADRE 02 ]</span>
+                    </div>
+                    <div className="text-xs font-bold font-display-serif">Faculty Organizer</div>
+                    <div className="text-[10px] text-stone-500 font-sans">Ratify & sign on-chain</div>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Full Legal / Academic Name *</span>
                 </label>
                 <input
                   type="text"
                   required
-                  value={orgIdentifier}
-                  onChange={(e) => {
-                    setOrgIdentifier(e.target.value);
-                    setOrgLoginError(null);
-                  }}
-                  placeholder="Enter authorized wallet (tz1...) or registered faculty email"
-                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-mono transition-colors"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={role === 'STUDENT' ? 'e.g. Alex Rivera' : 'e.g. Dr. Aris Thorne'}
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
                 />
               </div>
 
-              <div className="pt-2 flex flex-col sm:flex-row gap-3">
+              <div className="grid sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                    <Mail className="w-3.5 h-3.5 text-stone-400" />
+                    <span>Campus Email *</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@campus.edu"
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                    <KeyRound className="w-3.5 h-3.5 text-stone-400" />
+                    <span>Passphrase (min 6) *</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                  />
+                </div>
+              </div>
+
+              {/* Conditional Fields */}
+              {role === 'STUDENT' ? (
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                    <GraduationCap className="w-3.5 h-3.5 text-stone-400" />
+                    <span>Student Registry Matriculation ID</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
+                    placeholder="e.g. STU-2026-8941"
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                    <Building2 className="w-3.5 h-3.5 text-stone-400" />
+                    <span>Academic Department / Division</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="e.g. School of Environmental Science"
+                    className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                  />
+                </div>
+              )}
+
+              {/* Optional Wallet */}
+              <div>
+                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5 uppercase tracking-wider flex items-center gap-1.5">
+                  <Wallet className="w-3.5 h-3.5 text-stone-400" />
+                  <span>Tezos Address (Optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={walletAddress}
+                  onChange={(e) => setWalletAddress(e.target.value)}
+                  placeholder="e.g. tz1... (leave blank to auto-generate)"
+                  className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-4 py-2.5 text-[11px] text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors"
+                />
+              </div>
+
+              <div className="pt-2">
                 <button
                   type="submit"
-                  className="flex-1 py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-sm shadow-md shadow-indigo-600/20 transition-all flex items-center justify-center gap-2"
+                  disabled={isLoading}
+                  className="w-full py-3.5 px-4 rounded-xs bg-stone-900 hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-white text-stone-50 dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
                 >
-                  <KeyRound className="w-4 h-4" />
-                  <span>Sign In as Organizer</span>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>INITIALIZING CADRE RECORD...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>[ COMPLETE ENROLLMENT ]</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
+              </div>
 
+              <div className="text-center pt-2 text-xs font-sans text-stone-500">
+                <span>Already enrolled in the registry? </span>
                 <button
                   type="button"
-                  onClick={() => connectWallet('ORGANIZER')}
-                  className="py-3 px-5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 font-semibold text-xs transition-colors flex items-center justify-center gap-1.5"
+                  onClick={() => setAuthMode('SIGNIN')}
+                  className="text-stone-900 dark:text-stone-100 font-bold underline font-mono text-[11px]"
                 >
-                  <Wallet className="w-4 h-4 text-indigo-500" />
-                  <span>Connect Beacon Wallet</span>
+                  [ SIGN IN TO DOSSIER ]
                 </button>
               </div>
             </form>
+          )}
+        </div>
+
+        {/* Informational Sidebar (Editorial Specimen Card) */}
+        <div className="md:col-span-2 space-y-4 font-mono text-xs">
+          <div className="bg-white dark:bg-[#141312] border border-stone-300 dark:border-stone-800 rounded-xs p-6 space-y-4 shadow-xs">
+            <div className="text-[10px] text-stone-500 uppercase tracking-widest border-b border-stone-200 dark:border-stone-800 pb-2">
+              [ SPECIFICATION // {role === 'STUDENT' ? 'STUDENT DESK' : 'COUNCIL FORUM'} ]
+            </div>
+            <h3 className="text-base font-display-serif font-bold text-stone-900 dark:text-stone-100">
+              {role === 'STUDENT' ? 'Cadre Privileges & Capabilities' : 'Organizer Powers & Protocol Governance'}
+            </h3>
+            <ul className="space-y-3 text-stone-600 dark:text-stone-400 font-sans leading-relaxed">
+              {role === 'STUDENT' ? (
+                <>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-emerald-700 font-bold">&bull;</span>
+                    <span>Direct submission of empirical evidence with instant SHA-256 fingerprinting.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-emerald-700 font-bold">&bull;</span>
+                    <span>GreenAI neural vision automatically counts saplings and estimates recycling mass.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-emerald-700 font-bold">&bull;</span>
+                    <span>Verifiable public QR badges anchored to real Tezos blockchain blocks.</span>
+                  </li>
+                </>
+              ) : (
+                <>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-amber-700 font-bold">&bull;</span>
+                    <span>Inspect evidence queue with automated duplicate image detection flags.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-amber-700 font-bold">&bull;</span>
+                    <span>Ratify or reject submissions on-chain via Tezos smart contract.</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="font-mono text-amber-700 font-bold">&bull;</span>
+                    <span>Strict mathematical zero self-approval rule prevents review tampering.</span>
+                  </li>
+                </>
+              )}
+            </ul>
           </div>
 
-          {/* Section to Request New Authorization */}
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 space-y-6 shadow-md">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400 font-bold text-xs uppercase tracking-wider">
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Permission-Gated On-Chain Access</span>
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                  Need Review Authorization? Request Organizer Permission
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 max-w-2xl leading-relaxed">
-                  To prevent unauthorized approval authority on the Tezos smart contract, new organizer requests must be approved by an authorized campus organizer before privileges are granted.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowRequestForm(!showRequestForm)}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 text-xs font-semibold shrink-0"
-              >
-                {showRequestForm ? 'Hide Form' : 'Request Authorization →'}
-              </button>
+          {/* Direct Beacon Option */}
+          <div className="bg-stone-100/70 dark:bg-stone-950/70 border border-stone-300 dark:border-stone-800 rounded-xs p-5 space-y-2.5">
+            <div className="text-[10px] text-stone-500 uppercase tracking-widest font-bold">
+              [ WEB3 BEACON WALLET ]
             </div>
-
-            {showRequestForm && (
-              <>
-                {requestSubmitted ? (
-                  <div className="p-6 rounded-2xl bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-900 dark:text-amber-200 space-y-3">
-                    <div className="flex items-center gap-2 font-bold text-sm text-amber-700 dark:text-amber-300">
-                      <Clock className="w-5 h-5" />
-                      <span>Permission Request Submitted — Awaiting Authorization</span>
-                    </div>
-                    <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                      Your request (ID: <code className="text-amber-600 dark:text-amber-400 font-mono font-bold">{submittedRequestId}</code>) has been logged in the verification queue. An authorized organizer can review and approve it.
-                    </p>
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setRequestSubmitted(false)}
-                        className="text-xs text-amber-600 dark:text-amber-400 hover:underline font-semibold"
-                      >
-                        Submit another request
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <form onSubmit={handleOrganizerRequestSubmit} className="space-y-4 pt-2">
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Full Name & Title *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={orgName}
-                          onChange={(e) => setOrgName(e.target.value)}
-                          placeholder="e.g. Prof. Marcus Vance"
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Campus Office / Department *
-                        </label>
-                        <input
-                          type="text"
-                          required
-                          value={orgDept}
-                          onChange={(e) => setOrgDept(e.target.value)}
-                          placeholder="e.g. Environmental Sciences"
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Faculty Email Address *
-                        </label>
-                        <input
-                          type="email"
-                          required
-                          value={orgEmail}
-                          onChange={(e) => setOrgEmail(e.target.value)}
-                          placeholder="faculty@campus.edu"
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                          Tezos Wallet Address (tz1...)
-                        </label>
-                        <input
-                          type="text"
-                          value={orgWallet}
-                          onChange={(e) => setOrgWallet(e.target.value)}
-                          placeholder="tz1..."
-                          className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 font-mono transition-colors"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                        Scope of Review Authority
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={orgReason}
-                        onChange={(e) => setOrgReason(e.target.value)}
-                        placeholder="e.g. Overseeing campus recycling and community solar verification..."
-                        className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 transition-colors"
-                      />
-                    </div>
-
-                    <div className="pt-2">
-                      <button
-                        type="submit"
-                        className="px-6 py-2.5 rounded-xl bg-slate-900 dark:bg-slate-800 hover:bg-slate-800 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-xs text-white font-bold transition-all flex items-center gap-2 shadow-sm"
-                      >
-                        <span>Submit Request for Authorization</span>
-                        <ArrowRight className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </>
-            )}
-
-            {/* Recorded Authorization Requests */}
-            {organizerRequests.length > 0 && (
-              <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
-                <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider block">
-                  Logged Authorization Requests ({organizerRequests.filter((r) => r.status === 'PENDING').length} Pending)
-                </span>
-                <div className="space-y-2">
-                  {organizerRequests.map((req) => (
-                    <div
-                      key={req.id}
-                      className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs"
-                    >
-                      <div>
-                        <div className="font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                          <span>{req.name}</span>
-                          <span className="text-[10px] font-normal text-slate-500 dark:text-slate-400">({req.department})</span>
-                        </div>
-                        <div className="text-slate-500 dark:text-slate-400 font-mono text-[11px]">
-                          Wallet: {truncateAddress(req.walletAddress, 8, 6)} • Email: {req.email}
-                        </div>
-                      </div>
-                      <div>
-                        {req.status === 'PENDING' ? (
-                          <span className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-400 font-semibold text-[11px] flex items-center gap-1">
-                            <Clock className="w-3 h-3" />
-                            <span>Pending Organizer Review</span>
-                          </span>
-                        ) : req.status === 'APPROVED' ? (
-                          <span className="px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-400 font-semibold text-[11px] flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>Authorized</span>
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-rose-700 dark:text-rose-400 font-semibold text-[11px]">
-                            Rejected
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <p className="text-[11px] text-stone-600 dark:text-stone-400 font-sans leading-relaxed">
+              Prefer authenticating with your Temple, Kukai, or Beacon browser wallet?
+            </p>
+            <button
+              type="button"
+              onClick={() => connectWallet(role)}
+              className="w-full py-2.5 px-3 rounded-xs border border-stone-400 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 font-mono text-[11px] uppercase tracking-wider font-bold transition-colors hover:border-stone-700"
+            >
+              Connect Temple / Kukai Wallet
+            </button>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };

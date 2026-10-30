@@ -83,27 +83,33 @@ def get_single_activity(activity_id: str):
 @router.post("", response_model=ActivityResponse, status_code=status.HTTP_201_CREATED)
 def record_activity_submission(payload: ActivityCreate):
     """
-    Records a student's submission metadata in SQLite off-chain cache,
+    Records a student's submission metadata in off-chain database,
     including any GreenAI tree detection analysis.
     """
-    activity = create_or_update_activity(
-        activity_id=payload.activity_id,
-        submitter_address=payload.submitter_address,
-        category=payload.category,
-        quantity=payload.quantity,
-        unit=payload.unit,
-        description=payload.description,
-        evidence_hash=payload.evidence_hash,
-        submission_tx_hash=payload.submission_tx_hash,
-        submitted_at=payload.submitted_at,
-        ai_detected_count=payload.ai_detected_count,
-        ai_confidence_score=payload.ai_confidence_score,
-        ai_model_name=payload.ai_model_name,
-        ai_model_version=payload.ai_model_version,
-        ai_annotated_path=payload.ai_annotated_path,
-        ai_detection_data=payload.ai_detection_data,
-    )
-    return activity
+    try:
+        activity = create_or_update_activity(
+            activity_id=payload.activity_id,
+            submitter_address=payload.submitter_address,
+            category=payload.category,
+            quantity=payload.quantity,
+            unit=payload.unit,
+            description=payload.description,
+            evidence_hash=payload.evidence_hash,
+            submission_tx_hash=payload.submission_tx_hash,
+            submitted_at=payload.submitted_at,
+            ai_detected_count=payload.ai_detected_count,
+            ai_confidence_score=payload.ai_confidence_score,
+            ai_model_name=payload.ai_model_name,
+            ai_model_version=payload.ai_model_version,
+            ai_annotated_path=payload.ai_annotated_path,
+            ai_detection_data=payload.ai_detection_data,
+        )
+        return activity
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to record activity submission: {str(exc)}",
+        )
 
 
 @router.post("/{activity_id}/decision", response_model=DecisionRecordResponse)

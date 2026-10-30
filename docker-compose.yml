@@ -1,0 +1,47 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: greentrace-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - DATABASE_PATH=/app/data/greentrace.db
+      - UPLOAD_DIRECTORY=/app/protected_evidence
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173
+      - TEZOS_RPC_URL=https://rpc.shadownet.teztnets.com
+      - TZKT_API_URL=https://api.shadownet.tzkt.io
+    volumes:
+      - greentrace-db-data:/app/data
+      - greentrace-evidence-data:/app/protected_evidence
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=http://localhost:8000
+        - VITE_TEZOS_NETWORK=shadownet
+        - VITE_TEZOS_RPC_URL=https://rpc.shadownet.teztnets.com
+        - VITE_EXPLORER_URL=https://shadownet.tzkt.io
+    container_name: greentrace-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  greentrace-db-data:
+  greentrace-evidence-data:
+

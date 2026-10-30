@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { useWallet } from '../context/WalletContext';
+import { useWallet } from '../hooks/useWallet';
 import { truncateAddress, formatTimestamp } from '../utils/crypto';
 import { api } from '../services/api';
 import type { ActivityApiResponse } from '../services/api';
 import { EXPLORER_URL } from '../services/tezos';
 import {
-  History,
   Filter,
   CheckCircle2,
   Clock,
@@ -19,7 +18,6 @@ import {
   ChevronRight,
   User,
   AlertCircle,
-  Leaf,
 } from 'lucide-react';
 import type { ActivityCategory } from '../types';
 
@@ -36,7 +34,7 @@ const CATEGORIES: ('ALL' | ActivityCategory)[] = [
 const PAGE_SIZE = 10;
 
 export const ActivityHistoryPage: React.FC = () => {
-  const { wallet } = useWallet();
+  const { wallet, activities: localActivities } = useWallet();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Filters from query params or local state
@@ -79,14 +77,59 @@ export const ActivityHistoryPage: React.FC = () => {
         params.submitter_address = wallet.address;
       }
 
-      const data = await api.getActivities(params);
+      let data: ActivityApiResponse[] = [];
+      try {
+        data = await api.getActivities(params);
+      } catch (apiErr) {
+        console.warn('Backend fetch notice:', apiErr);
+      }
 
-      if (data.length > PAGE_SIZE) {
+      // Merge any local submissions that match the active filters
+      const dataIds = new Set(data.map((d) => d.activity_id));
+      const pendingLocal: ActivityApiResponse[] = localActivities
+        .filter((a) => {
+          if (a.is_sample) return false;
+          if (dataIds.has(a.activity_id)) return false;
+          if (statusFilter !== 'ALL' && a.status !== statusFilter) return false;
+          if (categoryFilter !== 'ALL' && a.category !== categoryFilter) return false;
+          if (onlyMine && wallet.address && a.submitter_address.toLowerCase() !== wallet.address.toLowerCase()) return false;
+          return true;
+        })
+        .map((local) => ({
+          activity_id: local.activity_id,
+          submitter_address: local.submitter_address,
+          category: local.category,
+          quantity: local.quantity,
+          unit: local.unit,
+          description: local.description,
+          evidence_hash: local.evidence_hash,
+          evidence_path: undefined,
+          status_cache: local.status,
+          submission_tx_hash: local.submission_tx_hash,
+          approval_tx_hash: local.approval_tx_hash,
+          rejection_tx_hash: undefined,
+          approver_address: local.approver_address,
+          submitted_at: local.submitted_at,
+          approved_at: local.approved_at,
+          rejected_at: undefined,
+          rejection_reason: local.rejection_reason,
+          blockchain_confirmed: local.submission_tx_hash ? 1 : 0,
+          reconciled_at: undefined,
+          ai_detected_count: local.ai_detected_count,
+          ai_confidence_score: local.ai_confidence_score,
+          ai_model_name: local.ai_model_name,
+          ai_model_version: local.ai_model_version,
+          ai_annotated_path: local.ai_annotated_path,
+        }));
+
+      const combined = [...data, ...pendingLocal];
+
+      if (combined.length > PAGE_SIZE) {
         setHasMore(true);
-        setActivities(data.slice(0, PAGE_SIZE));
+        setActivities(combined.slice(0, PAGE_SIZE));
       } else {
         setHasMore(false);
-        setActivities(data);
+        setActivities(combined);
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load activity history.';
@@ -94,7 +137,7 @@ export const ActivityHistoryPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, categoryFilter, onlyMine, wallet.address, page]);
+  }, [statusFilter, categoryFilter, onlyMine, wallet.address, page, localActivities]);
 
   useEffect(() => {
     fetchActivities();
@@ -115,69 +158,68 @@ export const ActivityHistoryPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-8 pb-16">
+    <div className="space-y-8 pb-16 animate-fadeIn font-mono">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-stone-300 dark:border-stone-800 pb-6">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2.5">
-              <History className="w-7 h-7 text-emerald-400" />
-              <span>Activity History</span>
-            </h1>
-            <span className="text-[11px] bg-slate-800 border border-slate-700 text-slate-300 px-2.5 py-0.5 rounded-full font-mono">
-              AUDIT TRAIL
+            <span className="text-xs font-mono font-bold uppercase tracking-widest text-emerald-800 dark:text-emerald-400">
+              [ CHRONICLE REGISTER // SECTION III ]
             </span>
           </div>
-          <p className="text-sm text-slate-400 mt-1">
-            Browse all campus sustainability records with verifiable on-chain confirmations and transaction references.
+          <h1 className="text-3xl sm:text-4xl font-display-serif font-bold text-stone-950 dark:text-stone-100 tracking-tight mt-1">
+            Historical Audit Register
+          </h1>
+          <p className="text-xs font-sans text-stone-600 dark:text-stone-400 mt-1">
+            Complete institutional archive of verified environmental proofs, smart contract transitions, and cryptographic transaction receipts.
           </p>
         </div>
 
         <button
           onClick={fetchActivities}
           disabled={isLoading}
-          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition-colors w-fit"
+          className="flex items-center gap-1.5 px-3.5 py-2 rounded-xs border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-900 text-stone-800 dark:text-stone-200 text-xs font-mono uppercase tracking-wider font-bold transition-colors w-fit hover:border-stone-600"
           title="Refresh activity history"
         >
-          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-400' : ''}`} />
-          <span>Refresh</span>
+          <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin text-emerald-600' : ''}`} />
+          <span>REFRESH ARCHIVE</span>
         </button>
       </div>
 
-      {/* Filter Toolbar */}
-      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2 text-xs font-semibold text-slate-300">
-          <Filter className="w-4 h-4 text-emerald-400" />
-          <span>Filters & Scope</span>
+      {/* Filter Toolbar (Editorial Card) */}
+      <div className="p-4 rounded-xs bg-white dark:bg-[#141312] border border-stone-300 dark:border-stone-800 space-y-4 shadow-xs">
+        <div className="flex items-center gap-2 text-xs font-bold text-stone-800 dark:text-stone-200 uppercase tracking-widest">
+          <Filter className="w-3.5 h-3.5 text-stone-500" />
+          <span>ARCHIVAL FILTERS & PARAMETERS</span>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4 text-xs font-mono">
           {/* Status Filter */}
           <div>
-            <label className="block text-slate-400 mb-1.5 font-medium">Status</label>
+            <label className="block text-stone-500 mb-1.5 uppercase tracking-wider text-[10px] font-bold">Status State</label>
             <select
               value={statusFilter}
               onChange={(e) => updateFilters(e.target.value, categoryFilter, onlyMine)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+              className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-3 py-2 text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="SUBMITTED">Pending Review (SUBMITTED)</option>
-              <option value="APPROVED">Approved (APPROVED)</option>
-              <option value="REJECTED">Rejected (REJECTED)</option>
+              <option value="ALL">ALL STATUSES</option>
+              <option value="SUBMITTED">PENDING REVIEW (SUBMITTED)</option>
+              <option value="APPROVED">RATIFIED (APPROVED)</option>
+              <option value="REJECTED">DECLINED (REJECTED)</option>
             </select>
           </div>
 
           {/* Category Filter */}
           <div>
-            <label className="block text-slate-400 mb-1.5 font-medium">Category</label>
+            <label className="block text-stone-500 mb-1.5 uppercase tracking-wider text-[10px] font-bold">Discipline</label>
             <select
               value={categoryFilter}
               onChange={(e) => updateFilters(statusFilter, e.target.value, onlyMine)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-slate-200 focus:outline-none focus:border-emerald-500 font-medium"
+              className="w-full bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 rounded-xs px-3 py-2 text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100"
             >
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
-                  {cat === 'ALL' ? 'All Categories' : cat}
+                  {cat === 'ALL' ? 'ALL DISCIPLINES' : cat.toUpperCase()}
                 </option>
               ))}
             </select>
@@ -185,22 +227,22 @@ export const ActivityHistoryPage: React.FC = () => {
 
           {/* Submitter Scope Toggle */}
           <div>
-            <label className="block text-slate-400 mb-1.5 font-medium">Scope</label>
+            <label className="block text-stone-500 mb-1.5 uppercase tracking-wider text-[10px] font-bold">Dossier Scope</label>
             <button
               onClick={() => {
                 if (!wallet.isConnected) return;
                 updateFilters(statusFilter, categoryFilter, !onlyMine);
               }}
               disabled={!wallet.isConnected}
-              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl border text-xs font-semibold transition-colors ${
+              className={`w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xs border text-xs tracking-wider uppercase font-bold transition-colors ${
                 onlyMine
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                  : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-900 dark:text-emerald-200 border-emerald-400 dark:border-emerald-700'
+                  : 'bg-stone-50 dark:bg-stone-950 text-stone-700 dark:text-stone-300 border-stone-300 dark:border-stone-800 hover:border-stone-600'
               } disabled:opacity-40 disabled:cursor-not-allowed`}
               title={wallet.isConnected ? 'Filter to submissions from your connected wallet' : 'Connect wallet to view your submissions only'}
             >
               <User className="w-3.5 h-3.5" />
-              <span>{onlyMine ? 'Showing My Submissions' : 'All Submissions'}</span>
+              <span>{onlyMine ? 'MY PROOFS ONLY' : 'ENTIRE ARCHIVE'}</span>
             </button>
           </div>
 
@@ -208,9 +250,9 @@ export const ActivityHistoryPage: React.FC = () => {
           <div className="flex items-end">
             <button
               onClick={() => updateFilters('ALL', 'ALL', false)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+              className="w-full px-3 py-2 rounded-xs border border-stone-300 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-900 text-stone-700 dark:text-stone-300 text-xs uppercase tracking-wider font-bold transition-colors"
             >
-              Reset Filters
+              RESET FILTERS
             </button>
           </div>
         </div>
@@ -218,149 +260,138 @@ export const ActivityHistoryPage: React.FC = () => {
 
       {/* Error Banner */}
       {errorMessage && (
-        <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+        <div className="p-4 rounded-xs bg-rose-50 dark:bg-rose-950/40 border border-rose-300 dark:border-rose-900 text-rose-900 dark:text-rose-200 text-xs flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{errorMessage}</span>
           </div>
-          <button onClick={fetchActivities} className="underline text-rose-200 hover:text-white">
+          <button onClick={fetchActivities} className="underline text-rose-800 dark:text-rose-200 font-bold uppercase">
             Retry
           </button>
         </div>
       )}
 
-      {/* Activities Table */}
-      <div className="rounded-2xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-xl">
+      {/* Activities Table (Archival Register) */}
+      <div className="rounded-xs border border-stone-300 dark:border-stone-800 bg-white dark:bg-[#141312] overflow-hidden shadow-xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-950/80 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+          <table className="w-full text-left text-xs text-stone-800 dark:text-stone-200">
+            <thead className="bg-stone-100/90 dark:bg-stone-900/90 text-[10px] uppercase tracking-widest text-stone-600 dark:text-stone-400 border-b border-stone-300 dark:border-stone-800">
               <tr>
-                <th className="py-3.5 px-4">Activity ID</th>
-                <th className="py-3.5 px-4">Category & Unit</th>
-                <th className="py-3.5 px-4">Submitter Address</th>
-                <th className="py-3.5 px-4">Status</th>
-                <th className="py-3.5 px-4">Date & Reviewer</th>
-                <th className="py-3.5 px-4">Transaction Reference</th>
-                <th className="py-3.5 px-4 text-right">Actions</th>
+                <th className="py-3 px-4 font-bold">Activity ID</th>
+                <th className="py-3 px-4 font-bold">Discipline & Metric</th>
+                <th className="py-3 px-4 font-bold">Cadre Submitter</th>
+                <th className="py-3 px-4 font-bold">Ratification State</th>
+                <th className="py-3 px-4 font-bold">Chronicle Timestamp</th>
+                <th className="py-3 px-4 font-bold">Tezos On-Chain TX</th>
+                <th className="py-3 px-4 text-right font-bold">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800">
+            <tbody className="divide-y divide-stone-200 dark:divide-stone-800/80 font-mono text-[11px]">
               {isLoading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-stone-500">
                     <div className="flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" />
-                      <span>Loading activity history...</span>
+                      <RefreshCw className="w-4 h-4 animate-spin text-stone-600" />
+                      <span>ACCESSING ARCHIVAL INDEX...</span>
                     </div>
                   </td>
                 </tr>
               ) : activities.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400 space-y-2">
-                    <Leaf className="w-8 h-8 text-slate-600 mx-auto" />
-                    <p className="font-semibold text-slate-300">No activities match your filters.</p>
-                    <p className="text-xs text-slate-500">
-                      Try adjusting the status or category filters, or submit a new activity.
+                  <td colSpan={7} className="py-12 text-center text-stone-500 space-y-2">
+                    <p className="font-bold text-stone-700 dark:text-stone-300 uppercase">[ NO RECORDS MATCH ACTIVE FILTERS ]</p>
+                    <p className="text-xs font-sans text-stone-500">
+                      Adjust status or discipline filters, or submit a new empirical record to the registry.
                     </p>
                   </td>
                 </tr>
               ) : (
                 activities.map((act) => (
-                  <tr key={act.activity_id} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-mono font-medium text-white">
+                  <tr key={act.activity_id} className="hover:bg-stone-100/50 dark:hover:bg-stone-900/50 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-stone-950 dark:text-stone-100">
                       <Link
                         to={`/activity/${act.activity_id}`}
-                        className="hover:text-emerald-400 transition-colors"
+                        className="hover:text-emerald-700 dark:hover:text-emerald-400 transition-colors underline decoration-dotted"
                       >
                         {act.activity_id}
                       </Link>
                     </td>
 
                     <td className="py-3.5 px-4">
-                      <div className="font-semibold text-white">{act.category}</div>
-                      <div className="text-xs text-emerald-400 font-mono">
+                      <div className="font-bold font-sans text-xs text-stone-900 dark:text-stone-100">{act.category}</div>
+                      <div className="text-[11px] text-emerald-800 dark:text-emerald-400 font-mono">
                         {act.quantity} {act.unit}
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-4 font-mono text-xs text-slate-300">
+                    <td className="py-3.5 px-4 text-stone-600 dark:text-stone-400 text-xs">
                       <span title={act.submitter_address}>
                         {truncateAddress(act.submitter_address, 6, 4)}
                       </span>
                       {wallet.address && act.submitter_address.toLowerCase() === wallet.address.toLowerCase() && (
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-semibold">
-                          You
+                        <span className="ml-1.5 px-1 py-0.2 rounded-xs bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 text-[9px] font-bold uppercase">
+                          YOU
                         </span>
                       )}
                     </td>
 
                     <td className="py-3.5 px-4">
                       {act.status_cache === 'APPROVED' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                           <CheckCircle2 className="w-3 h-3" />
-                          Approved
+                          RATIFIED
                         </span>
                       ) : act.status_cache === 'SUBMITTED' ? (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
                           <Clock className="w-3 h-3" />
-                          Pending Review
+                          PENDING
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-xs text-[10px] font-bold uppercase tracking-wider bg-rose-100 dark:bg-rose-950/60 text-rose-900 dark:text-rose-300 border border-rose-300 dark:border-rose-800">
                           <XCircle className="w-3 h-3" />
-                          Rejected
+                          DECLINED
                         </span>
                       )}
                     </td>
 
-                    <td className="py-3.5 px-4 text-xs text-slate-400">
-                      <div>Submitted: {formatTimestamp(act.submitted_at)}</div>
-                      {act.approved_at && (
-                        <div className="text-[11px] text-emerald-400/90 font-mono">
-                          Approved: {formatTimestamp(act.approved_at)}
-                        </div>
-                      )}
-                      {act.rejected_at && (
-                        <div className="text-[11px] text-rose-400/90 font-mono">
-                          Rejected: {formatTimestamp(act.rejected_at)}
-                        </div>
-                      )}
+                    <td className="py-3.5 px-4 text-stone-500 text-[11px]">
+                      <div>{formatTimestamp(act.submitted_at)}</div>
                       {act.approver_address && (
-                        <div className="text-[10px] text-slate-500 font-mono" title={act.approver_address}>
-                          By: {truncateAddress(act.approver_address, 6, 4)}
+                        <div className="text-[10px] text-stone-400" title={act.approver_address}>
+                          Auditor: {truncateAddress(act.approver_address, 5, 3)}
                         </div>
                       )}
                     </td>
 
-                    <td className="py-3.5 px-4 font-mono text-xs text-slate-400">
+                    <td className="py-3.5 px-4 text-stone-500">
                       {act.approval_tx_hash ? (
                         <div>
-                          <div className="text-[10px] text-slate-500">Decision TX:</div>
+                          <div className="text-[9px] uppercase tracking-wider text-stone-400">Decision TX</div>
                           <a
                             href={`${EXPLORER_URL}/${act.approval_tx_hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-teal-400 hover:text-teal-300 inline-flex items-center gap-1"
+                            className="text-emerald-800 dark:text-emerald-400 hover:underline inline-flex items-center gap-1 font-bold"
                           >
                             <span>{truncateAddress(act.approval_tx_hash, 6, 4)}</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-2.5 h-2.5" />
                           </a>
                         </div>
                       ) : act.submission_tx_hash ? (
                         <div>
-                          <div className="text-[10px] text-slate-500">Submission TX:</div>
+                          <div className="text-[9px] uppercase tracking-wider text-stone-400">Submission TX</div>
                           <a
                             href={`${EXPLORER_URL}/${act.submission_tx_hash}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-teal-400 hover:text-teal-300 inline-flex items-center gap-1"
+                            className="text-stone-800 dark:text-stone-300 hover:underline inline-flex items-center gap-1 font-bold"
                           >
                             <span>{truncateAddress(act.submission_tx_hash, 6, 4)}</span>
-                            <ExternalLink className="w-3 h-3" />
+                            <ExternalLink className="w-2.5 h-2.5" />
                           </a>
                         </div>
                       ) : (
-                        <span className="text-slate-600">Pending Mining</span>
+                        <span className="text-stone-400 text-[10px] uppercase">PENDING BLOCK</span>
                       )}
                     </td>
 
@@ -368,17 +399,17 @@ export const ActivityHistoryPage: React.FC = () => {
                       <div className="flex items-center justify-end gap-2">
                         <Link
                           to={`/activity/${act.activity_id}`}
-                          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                          title="View complete activity details"
+                          className="p-1.5 rounded-xs border border-stone-300 dark:border-stone-800 hover:border-stone-600 text-stone-700 dark:text-stone-300 transition-colors"
+                          title="Inspect activity dossier"
                         >
-                          <Eye className="w-4 h-4" />
+                          <Eye className="w-3.5 h-3.5" />
                         </Link>
                         <Link
                           to={`/verify?id=${act.activity_id}`}
-                          className="p-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 transition-colors"
-                          title="Public verification badge"
+                          className="p-1.5 rounded-xs border border-emerald-300 dark:border-emerald-800/80 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 transition-colors"
+                          title="Public QR certificate"
                         >
-                          <QrCode className="w-4 h-4" />
+                          <QrCode className="w-3.5 h-3.5" />
                         </Link>
                       </div>
                     </td>
@@ -390,25 +421,25 @@ export const ActivityHistoryPage: React.FC = () => {
         </div>
 
         {/* Pagination Bar */}
-        <div className="p-4 bg-slate-950/80 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+        <div className="p-3 bg-stone-100/90 dark:bg-stone-900/90 border-t border-stone-300 dark:border-stone-800 flex items-center justify-between text-xs text-stone-600 dark:text-stone-400">
           <span>
-            Page <span className="text-white font-bold">{page + 1}</span>
+            REGISTER FOLIO: <strong className="text-stone-900 dark:text-stone-100">{page + 1}</strong>
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => setPage((prev) => Math.max(0, prev - 1))}
               disabled={page === 0 || isLoading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 px-3 py-1 rounded-xs border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 text-stone-800 dark:text-stone-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs uppercase"
             >
               <ChevronLeft className="w-3.5 h-3.5" />
-              <span>Previous</span>
+              <span>PREVIOUS</span>
             </button>
             <button
               onClick={() => setPage((prev) => prev + 1)}
               disabled={!hasMore || isLoading}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              className="flex items-center gap-1 px-3 py-1 rounded-xs border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 text-stone-800 dark:text-stone-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs uppercase"
             >
-              <span>Next</span>
+              <span>NEXT</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>

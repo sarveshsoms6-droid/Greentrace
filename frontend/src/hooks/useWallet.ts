@@ -15,10 +15,10 @@ import {
   TEZOS_NETWORK_NAME,
 } from '../services/tezos';
 import {
-  INITIAL_SAMPLE_ACTIVITIES,
   SAMPLE_STUDENT_ADDRESS,
   SAMPLE_ORGANIZER_ADDRESS,
 } from '../utils/mockData';
+import type { UserProfile } from '../services/api';
 
 export interface WalletContextType {
   wallet: WalletState;
@@ -29,6 +29,7 @@ export interface WalletContextType {
   switchRole: (role: UserRole) => void;
   loginAsStudent: (name: string, studentId?: string, customAddress?: string) => void;
   loginAsOrganizer: (address?: string, name?: string) => void;
+  loginWithBackendUser: (user: UserProfile, token: string) => void;
   submitOrganizerPermissionRequest: (
     req: Omit<OrganizerPermissionRequest, 'id' | 'status' | 'requestedAt'>
   ) => OrganizerPermissionRequest;
@@ -65,6 +66,30 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [wallet, setWallet] = useState<WalletState>(() => {
+    const savedAuth = localStorage.getItem('greentrace_auth_user');
+    if (savedAuth) {
+      try {
+        const u = JSON.parse(savedAuth);
+        if (u && u.email && u.role) {
+          const defAddress = u.wallet_address || (u.role === 'ORGANIZER' ? SAMPLE_ORGANIZER_ADDRESS : 'tz1stu' + String(u.id).padStart(4, '0') + '00000000000000000000');
+          return {
+            isConnected: true,
+            address: defAddress,
+            role: u.role,
+            network: TEZOS_NETWORK_NAME,
+            rpcUrl: RPC_URL,
+            balance: u.role === 'ORGANIZER' ? '120.00 ꜩ' : '50.00 ꜩ',
+            isConnecting: false,
+            error: null,
+            isSimulated: false,
+            userName: u.name,
+            userEmail: u.email,
+            studentId: u.student_id || undefined,
+            department: u.department || undefined,
+          };
+        }
+      } catch {}
+    }
     const saved = localStorage.getItem('greentrace_wallet');
     if (saved) {
       try {
@@ -110,12 +135,15 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const saved = localStorage.getItem('greentrace_activities');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((a: ActivityRecord) => !a.is_sample);
+        }
       } catch {
-        return INITIAL_SAMPLE_ACTIVITIES;
+        return [];
       }
     }
-    return INITIAL_SAMPLE_ACTIVITIES;
+    return [];
   });
 
   useEffect(() => {
@@ -246,6 +274,8 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       // Clear local state even if Beacon call errors
     } finally {
       localStorage.removeItem('greentrace_wallet');
+      localStorage.removeItem('greentrace_auth_user');
+      localStorage.removeItem('greentrace_auth_token');
       setWallet({
         isConnected: false,
         address: null,
@@ -257,6 +287,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         error: null,
         isSimulated: false,
         userName: undefined,
+        userEmail: undefined,
+        studentId: undefined,
+        department: undefined,
       });
     }
   }, []);
@@ -306,6 +339,34 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       error: null,
       isSimulated: true,
       userName: name || 'Dr. Aris Thorne (Lead Organizer)',
+    });
+  }, []);
+
+  /**
+   * Log in using a verified backend user profile from Supabase.
+   */
+  const loginWithBackendUser = useCallback((user: UserProfile, token: string) => {
+    localStorage.setItem('greentrace_auth_token', token);
+    localStorage.setItem('greentrace_auth_user', JSON.stringify(user));
+
+    const defaultStudentAddress = `tz1stu${String(user.id).padStart(4, '0')}0000000000000000000000`;
+    const defaultOrganizerAddress = SAMPLE_ORGANIZER_ADDRESS;
+    const finalAddress = user.wallet_address || (user.role === 'ORGANIZER' ? defaultOrganizerAddress : defaultStudentAddress);
+
+    setWallet({
+      isConnected: true,
+      address: finalAddress,
+      role: user.role,
+      network: `${TEZOS_NETWORK_NAME} (Active ${user.role} Session)`,
+      rpcUrl: RPC_URL,
+      balance: user.role === 'ORGANIZER' ? '120.00 ꜩ' : '50.00 ꜩ',
+      isConnecting: false,
+      error: null,
+      isSimulated: false,
+      userName: user.name,
+      userEmail: user.email,
+      studentId: user.student_id || undefined,
+      department: user.department || undefined,
     });
   }, []);
 
@@ -443,6 +504,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         switchRole,
         loginAsStudent,
         loginAsOrganizer,
+        loginWithBackendUser,
         submitOrganizerPermissionRequest,
         approveOrganizerRequest,
         rejectOrganizerRequest,
