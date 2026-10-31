@@ -484,6 +484,19 @@ def init_db():
             """)
             conn.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
 
+            # Seed default demo student & organizer if users table is empty
+            cur_check = conn.execute("SELECT COUNT(*) as cnt FROM users;")
+            if cur_check.fetchone()["cnt"] == 0:
+                demo_hash = hash_password("Pass@123")
+                conn.execute("""
+                INSERT OR IGNORE INTO users (email, name, password_hash, role, student_id, wallet_address, created_at)
+                VALUES ('alex.rivera@campus.edu', 'Alex Rivera', ?, 'STUDENT', 'STU-2026-8941', 'tz1VSUr8wwNhLAzempoch5d6hLRiTh8Cjcjb', datetime('now'));
+                """, (demo_hash,))
+                conn.execute("""
+                INSERT OR IGNORE INTO users (email, name, password_hash, role, department, wallet_address, created_at)
+                VALUES ('a.thorne@campus.edu', 'Dr. Aris Thorne', ?, 'ORGANIZER', 'Faculty Council of Sustainability', 'tz1aSkwEkv3Ax2bWZHvCaOKUMcqModq5RMqJ', datetime('now'));
+                """, (demo_hash,))
+
             # Safely migrate existing databases that might lack new columns
             cursor = conn.execute("PRAGMA table_info(activities);")
             existing_cols = {row["name"] for row in cursor.fetchall()}
