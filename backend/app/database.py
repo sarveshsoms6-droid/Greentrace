@@ -38,27 +38,12 @@ if DATABASE_URL.startswith("sqlite:///"):
 else:
     DATABASE_PATH = DATABASE_URL
 
-def is_postgres_configured() -> bool:
-    """Checks whether a valid PostgreSQL / Supabase connection string is provided."""
-    if not HAVE_PSYCOPG2:
-        return False
-    # If DATABASE_PATH has been monkeypatched or explicitly pointed to a sqlite file, use sqlite
-    active_path = str(DATABASE_PATH)
-    if active_path.endswith(".db") or active_path.endswith(".sqlite") or "sqlite" in active_path:
-        return False
-    url = (os.getenv("DATABASE_URL") or active_path or "").strip()
-    return (
-        (url.startswith("postgresql://") or url.startswith("postgres://"))
-        and "[YOUR-" not in url
-    )
-
 _pg_pool: Optional[Any] = None
 _pg_failed: bool = False
 
-
 def is_postgres_configured() -> bool:
-    """Checks whether a valid PostgreSQL / Supabase connection string is provided."""
-    global _pg_failed
+    """Checks whether a valid PostgreSQL / Supabase connection pool is available."""
+    global _pg_failed, _pg_pool
     if _pg_failed or not HAVE_PSYCOPG2:
         return False
     # If DATABASE_PATH has been monkeypatched or explicitly pointed to a sqlite file, use sqlite
@@ -66,42 +51,52 @@ def is_postgres_configured() -> bool:
     if active_path.endswith(".db") or active_path.endswith(".sqlite") or "sqlite" in active_path:
         return False
     url = (os.getenv("DATABASE_URL") or active_path or "").strip()
-    return (
-        (url.startswith("postgresql://") or url.startswith("postgres://"))
-        and "[YOUR-" not in url
-    )
+    if not ((url.startswith("postgresql://") or url.startswith("postgres://")) and "[YOUR-" not in url):
+        return False
+    if _pg_pool is not None:
+        return True
+    # Attempt to initialize pool once
+    pool = _init_pg_pool(url)
+    return pool is not None
+
+
+def _init_pg_pool(url: str):
+    global _pg_pool, _pg_failed
+    if _pg_pool is not None:
+        return _pg_pool
+    if _pg_failed:
+        return None
+    dsn = url
+    if "sslmode=" not in dsn:
+        sep = "&" if "?" in dsn else "?"
+        dsn = f"{dsn}{sep}sslmode=require"
+    try:
+        _pg_pool = ThreadedConnectionPool(
+            minconn=1,
+            maxconn=int(os.getenv("DB_POOL_MAX", "10")),
+            dsn=dsn,
+            connect_timeout=3,
+        )
+        logger.info("Connected to Supabase PostgreSQL connection pool.")
+        return _pg_pool
+    except Exception as e:
+        logger.warning(f"PostgreSQL connection to Supabase unavailable ({e}). Falling back to local SQLite.")
+        _pg_failed = True
+        _pg_pool = None
+        return None
 
 
 def get_pg_pool():
-    """Initializes or returns the psycopg2 ThreadedConnectionPool with graceful fallback."""
-    global _pg_pool, _pg_failed
-    if _pg_failed:
-        return None
+    """Returns the psycopg2 ThreadedConnectionPool if active."""
+    global _pg_pool
     if _pg_pool is None and is_postgres_configured():
-        dsn = os.getenv("DATABASE_URL")
-        if not dsn:
-            return None
-        # Ensure sslmode is present for Supabase
-        if "sslmode=" not in dsn:
-            sep = "&" if "?" in dsn else "?"
-            dsn = f"{dsn}{sep}sslmode=require"
-        try:
-            _pg_pool = ThreadedConnectionPool(
-                minconn=1,
-                maxconn=int(os.getenv("DB_POOL_MAX", "10")),
-                dsn=dsn,
-            )
-            logger.info("Connected to Supabase PostgreSQL connection pool.")
-        except Exception as e:
-            logger.warning(f"Could not connect to Supabase PostgreSQL ({e}). Gracefully falling back to local SQLite.")
-            _pg_failed = True
-            _pg_pool = None
-            return None
+        return _pg_pool
     return _pg_pool
 
 
 DEFAULT_ORGANIZERS = {
     "tz1aSkwEkv3Ax2bWZHvCaOKUMcqModq5RMqJ".lower(),
+    "tz1eJkP2sfw6LnrvijT4u3UcBXKpJxXmAQxw".lower(),
 }
 
 
@@ -138,11 +133,11 @@ def is_authorized_organizer(address: Optional[str]) -> bool:
 
 def get_db_path() -> str:
     path = os.getenv("DATABASE_PATH", DATABASE_PATH)
-    if path.startswith("sqlite:///"):
-        path = path.replace("sqlite:///", "")
-    if path.startswith("postgresql://") or path.startswith("postgres://"):
+    if isinstance(path, str) and (path.startswith("postgresql://") or path.startswith("postgres://")):
         path = "greentrace.db"
-
+    elif isinstance(path, str) and path.startswith("sqlite:///"):
+        path = path.replace("sqlite:///", "")
+    
     # If the relative path does not exist in CWD, look for it in backend or root folder
     if not os.path.isabs(path) and not os.path.exists(path):
         root_candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", path))
@@ -262,42 +257,43 @@ def get_db_connection() -> Generator[Any, None, None]:
     Connects to Supabase PostgreSQL when DATABASE_URL is configured;
     falls back to SQLite with WAL mode for local/offline testing.
     """
-    pool = get_pg_pool() if is_postgres_configured() else None
-    if pool is not None:
-        raw_conn = pool.getconn()
-        wrapped_conn = PostgresConnectionWrapper(raw_conn)
-        try:
-            yield wrapped_conn
-            wrapped_conn.commit()
-        except Exception:
-            wrapped_conn.rollback()
-            raise
-        finally:
-            pool.putconn(raw_conn)
-    else:
-        conn = sqlite3.connect(
-            get_db_path(),
-            timeout=15.0,
-            check_same_thread=False,
-        )
-        conn.row_factory = sqlite3.Row
-        try:
-            conn.execute("PRAGMA journal_mode=WAL;")
-            conn.execute("PRAGMA busy_timeout=5000;")
-            conn.execute("PRAGMA foreign_keys=ON;")
-            yield conn
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
+    if is_postgres_configured():
+        pool = get_pg_pool()
+        if pool is not None:
+            raw_conn = pool.getconn()
+            wrapped_conn = PostgresConnectionWrapper(raw_conn)
+            try:
+                yield wrapped_conn
+                wrapped_conn.commit()
+                return
+            except Exception:
+                wrapped_conn.rollback()
+                raise
+            finally:
+                pool.putconn(raw_conn)
+
+    conn = sqlite3.connect(
+        get_db_path(),
+        timeout=15.0,
+        check_same_thread=False,
+    )
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA busy_timeout=5000;")
+        conn.execute("PRAGMA foreign_keys=ON;")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def init_db():
     """Initializes database schema with unique constraints, indexes, and tables."""
-    pool = get_pg_pool() if is_postgres_configured() else None
-    if pool is not None:
+    if is_postgres_configured():
         with get_db_connection() as conn:
             conn.execute("""
             CREATE TABLE IF NOT EXISTS evidence (
@@ -1196,6 +1192,7 @@ def get_activity_history(activity_id: str) -> Optional[dict]:
     if not activity:
         return None
 
+    transactions = get_transactions_for_activity(activity_id)
     actual_id = activity["activity_id"]
     transactions = get_transactions_for_activity(actual_id)
 
@@ -1378,6 +1375,36 @@ def get_user_by_email(email: str, include_password: bool = False) -> Optional[di
         cur = conn.execute(
             f"SELECT {cols} FROM users WHERE LOWER(email) = ? LIMIT 1;",
             (normalized_email,),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_identifier(identifier: str, include_password: bool = False) -> Optional[dict]:
+    """Retrieves a user by email, student_id, or wallet_address."""
+    clean = identifier.lower().strip()
+    cols = "*" if include_password else "id, email, name, role, student_id, department, wallet_address, created_at, last_login"
+    with get_db_connection() as conn:
+        cur = conn.execute(
+            f"""
+            SELECT {cols} FROM users 
+            WHERE LOWER(email) = ? OR LOWER(COALESCE(student_id, '')) = ? OR LOWER(COALESCE(wallet_address, '')) = ?
+            LIMIT 1;
+            """,
+            (clean, clean, clean),
+        )
+        row = cur.fetchone()
+        return dict(row) if row else None
+
+
+def get_user_by_wallet(wallet_address: str, include_password: bool = False) -> Optional[dict]:
+    """Retrieves a user by wallet address."""
+    clean = wallet_address.lower().strip()
+    cols = "*" if include_password else "id, email, name, role, student_id, department, wallet_address, created_at, last_login"
+    with get_db_connection() as conn:
+        cur = conn.execute(
+            f"SELECT {cols} FROM users WHERE LOWER(COALESCE(wallet_address, '')) = ? LIMIT 1;",
+            (clean,),
         )
         row = cur.fetchone()
         return dict(row) if row else None

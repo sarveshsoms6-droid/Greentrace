@@ -553,6 +553,14 @@ export const api = {
     });
   },
 
+  async tezosQuickLogin(walletAddress: string): Promise<AuthResponse> {
+    return fetchJson<AuthResponse>(`${API_BASE_URL}/api/auth/tezos-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ wallet_address: walletAddress }),
+    });
+  },
+
   async getUserProfile(userId: number): Promise<UserProfile> {
     return fetchJson<UserProfile>(`${API_BASE_URL}/api/auth/user/${encodeURIComponent(userId)}`);
   },

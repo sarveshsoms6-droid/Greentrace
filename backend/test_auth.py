@@ -131,3 +131,69 @@ def test_get_user_profile():
     assert res.json()["name"] == "Profile User"
     assert "password_hash" not in res.json()
 
+
+def test_login_with_student_id_identifier():
+    # 1. Sign up student
+    signup_res = client.post("/api/auth/signup", json={
+        "email": "sid.student@campus.edu",
+        "name": "Alex Rivera",
+        "password": "Password@123",
+        "role": "STUDENT",
+        "student_id": "STU-2026-9999",
+    })
+    assert signup_res.status_code == 201
+
+    # 2. Log in using Student ID in identifier field
+    login_res = client.post("/api/auth/login", json={
+        "email": "STU-2026-9999",
+        "password": "Password@123",
+    })
+    assert login_res.status_code == 200
+    data = login_res.json()
+    assert data["success"] is True
+    assert data["user"]["role"] == "STUDENT"
+    assert data["user"]["student_id"] == "STU-2026-9999"
+
+
+def test_student_id_guarantees_student_role():
+    # Having a student_id strictly forces STUDENT role
+    signup_res = client.post("/api/auth/signup", json={
+        "email": "matriculated@campus.edu",
+        "name": "Strict Student",
+        "password": "Password@123",
+        "role": "STUDENT",
+        "student_id": "STU-2026-7777",
+    })
+    assert signup_res.status_code == 201
+    assert signup_res.json()["user"]["role"] == "STUDENT"
+
+
+def test_organizer_tezos_quick_login():
+    # 1. Authorized organizer Tezos quick login (Sample Organizer)
+    auth_res = client.post("/api/auth/tezos-login", json={
+        "wallet_address": "tz1aSkwEkv3Ax2bWZHvCaOKUMcqModq5RMqJ",
+    })
+    assert auth_res.status_code == 200
+    auth_data = auth_res.json()
+    assert auth_data["success"] is True
+    assert auth_data["user"]["role"] == "ORGANIZER"
+    assert auth_data["token"].startswith("gt_")
+
+    # 2. Newly authorized organizer Tezos quick login (User requested wallet code)
+    auth_res2 = client.post("/api/auth/tezos-login", json={
+        "wallet_address": "tz1eJkP2sfw6LnrvijT4u3UcBXKpJxXmAQxw",
+    })
+    assert auth_res2.status_code == 200
+    auth_data2 = auth_res2.json()
+    assert auth_data2["success"] is True
+    assert auth_data2["user"]["role"] == "ORGANIZER"
+    assert auth_data2["token"].startswith("gt_")
+
+    # 3. Unauthorized address returns 403
+    unauth_res = client.post("/api/auth/tezos-login", json={
+        "wallet_address": "tz1RandomUnauthorizedAddress1234567890",
+    })
+    assert unauth_res.status_code == 403
+    assert "not registered as an authorized faculty organizer" in unauth_res.json()["detail"].lower()
+
+

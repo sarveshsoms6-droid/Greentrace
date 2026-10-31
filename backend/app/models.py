@@ -274,8 +274,12 @@ class UserSignUpRequest(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    email: str = Field(..., min_length=3, max_length=255)
+    email: str = Field(..., min_length=2, max_length=255)
     password: str = Field(..., min_length=1, max_length=128)
+
+
+class TezosQuickLoginRequest(BaseModel):
+    wallet_address: str = Field(..., min_length=10, max_length=100)
 
 
 class UserResponse(BaseModel):

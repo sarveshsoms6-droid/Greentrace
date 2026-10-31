@@ -18,6 +18,7 @@ export const CONTRACT_ADDRESS = (import.meta.env.VITE_CONTRACT_ADDRESS || '') as
 // Configured authorized organizer wallets (comma-separated public key hashes)
 const DEFAULT_ORGANIZERS = [
   'tz1aSkwEkv3Ax2bWZHvCaOKUMcqModq5RMqJ',
+  'tz1eJkP2sfw6LnrvijT4u3UcBXKpJxXmAQxw',
 ];
 
 export function getAuthorizedOrganizerAddresses(): string[] {

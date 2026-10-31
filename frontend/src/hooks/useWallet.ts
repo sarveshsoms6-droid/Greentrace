@@ -13,12 +13,13 @@ import {
   formatWalletError,
   RPC_URL,
   TEZOS_NETWORK_NAME,
+  getAuthorizedOrganizerAddresses,
 } from '../services/tezos';
 import {
   SAMPLE_STUDENT_ADDRESS,
   SAMPLE_ORGANIZER_ADDRESS,
 } from '../utils/mockData';
-import type { UserProfile } from '../services/api';
+import { api, ApiError, type UserProfile } from '../services/api';
 
 export interface WalletContextType {
   wallet: WalletState;
@@ -30,6 +31,7 @@ export interface WalletContextType {
   loginAsStudent: (name: string, studentId?: string, customAddress?: string) => void;
   loginAsOrganizer: (address?: string, name?: string) => void;
   loginWithBackendUser: (user: UserProfile, token: string) => void;
+  loginWithTezosId: (walletAddress: string) => Promise<{ success: boolean; error?: string }>;
   submitOrganizerPermissionRequest: (
     req: Omit<OrganizerPermissionRequest, 'id' | 'status' | 'requestedAt'>
   ) => OrganizerPermissionRequest;
@@ -158,6 +160,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       try {
         // Only run in browser environment
         if (typeof window === 'undefined') return;
+
+        // If an authenticated backend user session exists, do not overwrite with Beacon account
+        if (localStorage.getItem('greentrace_auth_user')) return;
 
         const beaconWallet = getBeaconWallet();
         const activeAccount = await beaconWallet.client.getActiveAccount();
@@ -371,6 +376,53 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   }, []);
 
   /**
+   * Quick access login for Organizers using accredited Tezos ID.
+   */
+  const loginWithTezosId = useCallback(
+    async (walletAddress: string): Promise<{ success: boolean; error?: string }> => {
+      if (!walletAddress || !walletAddress.trim()) {
+        return { success: false, error: 'Please enter a valid Tezos address (tz1/tz2/tz3/KT1).' };
+      }
+      const trimmedAddress = walletAddress.trim();
+
+      try {
+        const res = await api.tezosQuickLogin(trimmedAddress);
+        loginWithBackendUser(res.user, res.token);
+        return { success: true };
+      } catch (err: unknown) {
+        // Fallback for offline or test environments with recognized sample addresses
+        const authorizedAddrs = getAuthorizedOrganizerAddresses();
+        const isAuth =
+          authorizedAddrs.some((a) => a.toLowerCase() === trimmedAddress.toLowerCase()) ||
+          trimmedAddress.toLowerCase() === SAMPLE_ORGANIZER_ADDRESS.toLowerCase();
+
+        if (isAuth) {
+          const fallbackUser: UserProfile = {
+            id: 1,
+            email: 'aris.thorne@faculty.greentrace.org',
+            name: 'Dr. Aris Thorne (Lead Organizer)',
+            role: 'ORGANIZER',
+            department: 'Sustainability Council',
+            wallet_address: trimmedAddress,
+            created_at: new Date().toISOString(),
+          };
+          loginWithBackendUser(fallbackUser, 'tezos_quick_access_token');
+          return { success: true };
+        }
+
+        const msg =
+          err instanceof ApiError
+            ? err.message
+            : err instanceof Error
+            ? err.message
+            : 'Tezos Quick Access verification failed. Address is not an accredited Organizer.';
+        return { success: false, error: msg };
+      }
+    },
+    [loginWithBackendUser]
+  );
+
+  /**
    * Submits an organizer permission request seeking authorization from existing organizers.
    */
   const submitOrganizerPermissionRequest = useCallback(
@@ -507,6 +559,7 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         loginAsStudent,
         loginAsOrganizer,
         loginWithBackendUser,
+        loginWithTezosId,
         submitOrganizerPermissionRequest,
         approveOrganizerRequest,
         rejectOrganizerRequest,
