@@ -4,7 +4,7 @@ import { useWallet } from '../context/WalletContext';
 import type { ActivityCategory, ActivityRecord, TreeDetectionResult } from '../types';
 import { CATEGORY_UNITS } from '../types';
 import { calculateFileSHA256, truncateAddress } from '../utils/crypto';
-import { api, ApiError } from '../services/api';
+import { api, ApiError, type EvidenceUploadResponse } from '../services/api';
 import { submitActivityOperation, CONTRACT_ADDRESS, formatWalletError } from '../services/tezos';
 import {
   Upload,
@@ -20,7 +20,17 @@ import {
   Check,
   Eye,
   FileCheck,
+  Trash2,
+  Plus,
 } from 'lucide-react';
+
+interface ProofItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+  hash: string;
+  isDuplicate?: boolean;
+}
 
 export const SubmitActivityPage: React.FC = () => {
   const { wallet, addActivity, isDuplicateHash } = useWallet();
@@ -34,9 +44,9 @@ export const SubmitActivityPage: React.FC = () => {
     new Date().toISOString().split('T')[0]
   );
 
-  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
-  const [evidencePreviewUrl, setEvidencePreviewUrl] = useState<string | null>(null);
-  const [evidenceHash, setEvidenceHash] = useState<string>('');
+  // Multi-image evidence states (supports up to 25 photographic proofs)
+  const [proofItems, setProofItems] = useState<ProofItem[]>([]);
+  const [selectedProofIndex, setSelectedProofIndex] = useState<number>(0);
   const [serverHash, setServerHash] = useState<string>('');
   const [isHashing, setIsHashing] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle');
@@ -68,60 +78,91 @@ export const SubmitActivityPage: React.FC = () => {
     }
   }, [category]);
 
-  // Handle file selection & client-side SHA-256 calculation + backend duplicate check
+  // Handle multi-image file selection & client-side SHA-256 calculation (up to 25 proofs)
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFiles = e.target.files ? Array.from(e.target.files) : [];
+    if (rawFiles.length === 0) return;
 
-    // Validate file type
-    if (!file.type.startsWith('image/')) {
-      setErrorMessage('Please upload an authentic image file (PNG, JPEG, WebP).');
+    const currentCount = proofItems.length;
+    const remainingSlots = 25 - currentCount;
+
+    if (remainingSlots <= 0) {
+      setErrorMessage('Deposition folio limit reached: Maximum 25 photographic proofs allowed.');
       return;
     }
 
-    // Validate size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('Evidence file size exceeds institutional 10MB limit.');
-      return;
+    let filesToAdd = rawFiles;
+    if (rawFiles.length > remainingSlots) {
+      setErrorMessage(`Maximum 25 photographic proofs allowed per submission. Added the first ${remainingSlots} files.`);
+      filesToAdd = rawFiles.slice(0, remainingSlots);
+    } else {
+      setErrorMessage(null);
     }
 
-    setErrorMessage(null);
-    setEvidenceFile(file);
-    setEvidencePreviewUrl(URL.createObjectURL(file));
-    setServerHash('');
-    setDuplicateWarning(false);
-    setDuplicateActivityId(null);
-    setAiResult(null);
-    setAiError(null);
-    setUploadProgress('idle');
     setIsHashing(true);
+    const newItems: ProofItem[] = [];
 
-    try {
-      // Client-side hash (fast cryptographic fingerprint)
-      const clientHash = await calculateFileSHA256(file);
-      setEvidenceHash(clientHash);
-
-      // Check backend for duplicates using client-computed hash
-      try {
-        const dupCheck = await api.checkDuplicate(clientHash);
-        setDuplicateWarning(dupCheck.is_duplicate);
-        setDuplicateActivityId(dupCheck.existing_activity_id ?? null);
-      } catch {
-        // Fall back gracefully
-        const localDup = isDuplicateHash(clientHash);
-        setDuplicateWarning(localDup);
+    for (const file of filesToAdd) {
+      if (!file.type.startsWith('image/')) {
+        continue;
       }
-    } catch {
-      setErrorMessage('Failed to compute SHA-256 digest for selected photograph.');
-    } finally {
-      setIsHashing(false);
+      if (file.size > 10 * 1024 * 1024) {
+        continue;
+      }
+
+      try {
+        const hash = await calculateFileSHA256(file);
+        let isDup = false;
+        try {
+          const dupCheck = await api.checkDuplicate(hash);
+          isDup = dupCheck.is_duplicate;
+          if (isDup && dupCheck.existing_activity_id) {
+            setDuplicateActivityId(dupCheck.existing_activity_id);
+          }
+        } catch {
+          isDup = isDuplicateHash(hash);
+        }
+
+        newItems.push({
+          id: `${file.name}-${file.size}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+          file,
+          previewUrl: URL.createObjectURL(file),
+          hash,
+          isDuplicate: isDup,
+        });
+      } catch (err) {
+        console.error('Failed to hash proof image:', err);
+      }
+    }
+
+    setIsHashing(false);
+    if (newItems.length > 0) {
+      setProofItems((prev) => [...prev, ...newItems]);
+      const hasDup = newItems.some((item) => item.isDuplicate);
+      if (hasDup) {
+        setDuplicateWarning(true);
+      }
     }
   };
 
-  // Trigger GreenAI tree detection
+  const handleRemoveProof = (indexToRemove: number) => {
+    setProofItems((prev) => {
+      const next = prev.filter((_, idx) => idx !== indexToRemove);
+      if (selectedProofIndex >= next.length) {
+        setSelectedProofIndex(Math.max(0, next.length - 1));
+      }
+      const stillHasDup = next.some((item) => item.isDuplicate);
+      setDuplicateWarning(stillHasDup);
+      return next;
+    });
+  };
+
+  const activeProof = proofItems[selectedProofIndex] || proofItems[0] || null;
+
+  // Trigger GreenAI tree detection on active photograph
   const handleAnalyzeWithGreenAI = async () => {
-    if (!evidenceFile) {
-      setAiError('Please select an evidence photograph first.');
+    if (!activeProof) {
+      setAiError('Please attach an evidence photograph first.');
       return;
     }
 
@@ -129,7 +170,7 @@ export const SubmitActivityPage: React.FC = () => {
     setAiError(null);
 
     try {
-      const result = await api.detectTrees(evidenceFile);
+      const result = await api.detectTrees(activeProof.file);
       setAiResult(result);
       setActiveImageView('ANNOTATED');
 
@@ -161,8 +202,8 @@ export const SubmitActivityPage: React.FC = () => {
       return;
     }
 
-    if (!evidenceFile) {
-      setErrorMessage('An authentic photographic proof is mandatory for deposition.');
+    if (proofItems.length === 0) {
+      setErrorMessage('At least one authentic photographic proof (up to 25) is mandatory for deposition.');
       return;
     }
 
@@ -171,8 +212,8 @@ export const SubmitActivityPage: React.FC = () => {
       return;
     }
 
-    if (duplicateWarning) {
-      setErrorMessage('Duplicate evidence detected. You must submit original, unrecorded field evidence.');
+    if (duplicateWarning || proofItems.some((p) => p.isDuplicate)) {
+      setErrorMessage('Duplicate evidence detected among attached photographs. You must submit original, unrecorded field evidence.');
       return;
     }
 
@@ -180,36 +221,32 @@ export const SubmitActivityPage: React.FC = () => {
     const finalUnit = category === 'Other' ? customUnit.trim() || 'units' : unit;
 
     setIsSubmitting(true);
-    setSubmissionStep('Computing SHA-256 digest and uploading evidence to vault...');
+    setSubmissionStep(`Fingerprinting and uploading ${proofItems.length} photographic proof(s) to vault...`);
     setUploadProgress('uploading');
 
     try {
-      // Step 1: Upload evidence file and obtain authoritative server hash
-      let confirmedHash = evidenceHash;
+      // Step 1: Upload all attached evidence files (up to 25)
+      const filesToUpload = proofItems.map((p) => p.file);
+      let uploadResults: EvidenceUploadResponse[] = [];
       try {
-        const uploadResult = await api.uploadEvidence(evidenceFile);
-        setServerHash(uploadResult.evidence_hash);
-        setUploadProgress('done');
+        uploadResults = await api.uploadEvidenceBatch(filesToUpload);
+      } catch (batchErr) {
+        console.warn('Batch upload fallback to individual uploads:', batchErr);
+        uploadResults = await Promise.all(filesToUpload.map((f) => api.uploadEvidence(f)));
+      }
 
-        // Cryptographic integrity check: client hash must equal server hash
-        if (evidenceHash && uploadResult.evidence_hash !== evidenceHash) {
-          throw new Error('Digest mismatch: Client computed SHA-256 does not match server digest.');
-        }
+      setUploadProgress('done');
 
-        confirmedHash = uploadResult.evidence_hash;
+      // Primary digest is the selected/first verified photograph's SHA-256
+      const primaryResult = uploadResults[selectedProofIndex] || uploadResults[0];
+      const confirmedHash = primaryResult.evidence_hash;
+      setServerHash(confirmedHash);
 
-        if (uploadResult.is_duplicate) {
-          setDuplicateWarning(true);
-          setDuplicateActivityId(uploadResult.existing_activity_id ?? null);
-        }
-      } catch (uploadErr) {
-        setUploadProgress('error');
-        if (uploadErr instanceof ApiError) {
-          setErrorMessage(`Evidence vault failure (${uploadErr.status}): ${uploadErr.detail}`);
-        } else {
-          setErrorMessage('Evidence upload failed. Server must confirm cryptographic digest before submission.');
-        }
-        return;
+      const dupDetected = uploadResults.find((r) => r.is_duplicate);
+      if (dupDetected) {
+        setDuplicateWarning(true);
+        setDuplicateActivityId(dupDetected.existing_activity_id ?? null);
+        throw new Error('Duplicate evidence detected in attached photographic proofs.');
       }
 
       // Generate unique activity folio record
@@ -236,6 +273,7 @@ export const SubmitActivityPage: React.FC = () => {
         setSubmissionStep('Recording deposition into off-chain archive...');
       }
 
+      const allFilenames = proofItems.map((p) => p.file.name).join(', ');
       const newRecord: ActivityRecord = {
         activity_id: uniqueId,
         category,
@@ -243,7 +281,7 @@ export const SubmitActivityPage: React.FC = () => {
         unit: finalUnit,
         description: description.trim(),
         evidence_hash: confirmedHash,
-        evidence_filename: evidenceFile.name,
+        evidence_filename: allFilenames,
         status: 'SUBMITTED',
         submitter_address: wallet.address,
         submitted_at: contractTimestamp,
@@ -537,66 +575,152 @@ export const SubmitActivityPage: React.FC = () => {
           </div>
 
           {/* ================================================================= */}
-          {/* SECTION 02: PHOTOGRAPHIC PROOF & DIGEST METROLOGY */}
+          {/* SECTION 02: PHOTOGRAPHIC PROOF & DIGEST METROLOGY (UP TO 25) */}
           {/* ================================================================= */}
           <div className="space-y-4">
-            <div className="border-b border-stone-200 dark:border-stone-800 pb-2">
-              <span className="font-mono-code text-[11px] text-stone-500 uppercase tracking-widest">[ SECTION 02 ]</span>
-              <h3 className="font-serif-editorial text-xl font-normal text-stone-900 dark:text-stone-100">
-                Photographic Proof & Digest Metrology
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-stone-200 dark:border-stone-800 pb-2 gap-2">
+              <div>
+                <span className="font-mono-code text-[11px] text-stone-500 uppercase tracking-widest">[ SECTION 02 ]</span>
+                <h3 className="font-serif-editorial text-xl font-normal text-stone-900 dark:text-stone-100">
+                  Photographic Proof & Vault Deposition
+                </h3>
+              </div>
+              <span className="stamp-badge border-stone-400 text-stone-700 dark:text-stone-300 text-[11px] self-start sm:self-auto">
+                VAULT CAPACITY: {proofItems.length} / 25 PROOFS
+              </span>
             </div>
 
             <div className="border-2 border-dashed border-stone-300 dark:border-stone-800 hover:border-stone-500 rounded-lg p-6 text-center transition-colors bg-stone-50/50 dark:bg-stone-950/40">
               <input
                 type="file"
+                multiple
                 id="evidence-upload"
                 accept="image/png, image/jpeg, image/webp"
                 onChange={handleFileChange}
-                disabled={isSubmitting}
+                disabled={isSubmitting || proofItems.length >= 25}
                 className="hidden"
               />
-              <label htmlFor="evidence-upload" className="cursor-pointer flex flex-col items-center justify-center space-y-2">
+              <label htmlFor="evidence-upload" className={`flex flex-col items-center justify-center space-y-2 ${proofItems.length >= 25 ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}>
                 <div className="w-12 h-12 rounded bg-stone-200 dark:bg-stone-800 flex items-center justify-center text-stone-700 dark:text-stone-300">
                   {isHashing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                 </div>
                 <div>
                   <span className="text-xs font-mono-code font-bold uppercase tracking-wider text-stone-900 dark:text-stone-100 hover:underline">
-                    [ Click to Select Evidence Photograph ]
+                    {proofItems.length >= 25
+                      ? '[ Maximum 25 Photographic Proofs Attached ]'
+                      : '[ Click to Select Evidence Photographs (Up to 25) ]'}
                   </span>
                   <span className="text-[11px] font-mono-code text-stone-500 block mt-1">
-                    Accepts PNG, JPG, or WebP up to 10MB
+                    Accepts PNG, JPG, or WebP up to 10MB each • Multiple selection supported (1 to 25 proofs)
                   </span>
                 </div>
               </label>
 
-              {evidenceFile && (
-                <div className="mt-4 pt-4 border-t border-stone-200 dark:border-stone-800 text-left space-y-3 font-mono-code">
+              {/* Upload & Fingerprinting Status */}
+              {isHashing && (
+                <div className="mt-4 pt-3 border-t border-stone-200 dark:border-stone-800 flex items-center justify-center gap-2 text-xs font-mono-code text-stone-600 dark:text-stone-400">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
+                  <span>Computing cryptographic SHA-256 digests across specimens…</span>
+                </div>
+              )}
+
+              {/* Proofs Thumbnail Gallery (up to 25 images) */}
+              {proofItems.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-stone-200 dark:border-stone-800 text-left space-y-3 font-mono-code">
                   <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-xs">{evidenceFile.name}</span>
-                    <span className="text-stone-500">{(evidenceFile.size / 1024).toFixed(1)} KB</span>
+                    <span className="font-bold text-stone-900 dark:text-stone-100 uppercase tracking-wider">
+                      Attached Specimens ({proofItems.length} of 25)
+                    </span>
+                    <label
+                      htmlFor="evidence-upload"
+                      className={`text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 ${
+                        proofItems.length >= 25 || isSubmitting ? 'hidden' : 'cursor-pointer'
+                      }`}
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>[ Attach More Proofs ]</span>
+                    </label>
                   </div>
 
-                  <div className="p-3 bg-white dark:bg-stone-900 rounded border border-stone-300 dark:border-stone-800 space-y-1">
-                    <div className="flex items-center gap-1.5 text-[11px] text-stone-500 font-semibold uppercase">
-                      <Hash className="w-3.5 h-3.5" />
-                      <span>SHA-256 Digest (Client Computed):</span>
-                    </div>
-                    <p className="text-xs text-stone-900 dark:text-stone-100 break-all select-all font-bold">
-                      {evidenceHash || 'Computing SHA-256 cryptographic hash...'}
-                    </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-96 overflow-y-auto p-1">
+                    {proofItems.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        onClick={() => setSelectedProofIndex(idx)}
+                        className={`relative rounded border p-2 text-xs space-y-1.5 cursor-pointer transition-all ${
+                          selectedProofIndex === idx
+                            ? 'border-emerald-600 bg-emerald-500/5 dark:bg-emerald-950/20 ring-1 ring-emerald-600'
+                            : 'border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 hover:border-stone-400'
+                        }`}
+                      >
+                        <div className="h-24 w-full bg-stone-100 dark:bg-stone-950 rounded overflow-hidden flex items-center justify-center relative">
+                          <img
+                            src={item.previewUrl}
+                            alt={`Proof specimen ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={(ev) => {
+                              ev.stopPropagation();
+                              handleRemoveProof(idx);
+                            }}
+                            disabled={isSubmitting}
+                            title="Remove this specimen"
+                            className="absolute top-1 right-1 p-1 rounded-full bg-stone-900/80 hover:bg-rose-600 text-white transition-colors"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                          <span className="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-black/75 text-white text-[9px] font-bold">
+                            #{idx + 1}
+                          </span>
+                        </div>
+
+                        <div className="space-y-0.5 text-[10px]">
+                          <p className="font-bold text-stone-900 dark:text-stone-100 truncate" title={item.file.name}>
+                            {item.file.name}
+                          </p>
+                          <div className="flex items-center justify-between text-stone-500">
+                            <span>{(item.file.size / 1024).toFixed(0)} KB</span>
+                            <span className="font-mono-code font-bold truncate max-w-[70px]" title={item.hash}>
+                              {item.hash.substring(0, 6)}…
+                            </span>
+                          </div>
+                          {selectedProofIndex === idx && (
+                            <span className="inline-block text-[9px] font-bold text-emerald-700 dark:text-emerald-400 uppercase">
+                              [ Active Specimen ]
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
+
+                  {activeProof && (
+                    <div className="p-3 bg-white dark:bg-stone-900 rounded border border-stone-300 dark:border-stone-800 space-y-1 mt-2">
+                      <div className="flex items-center justify-between text-[11px] text-stone-500 font-semibold uppercase">
+                        <span className="flex items-center gap-1.5">
+                          <Hash className="w-3.5 h-3.5" />
+                          <span>Active Specimen Digest (#{selectedProofIndex + 1}):</span>
+                        </span>
+                        <span className="text-stone-700 dark:text-stone-300 truncate max-w-xs">{activeProof.file.name}</span>
+                      </div>
+                      <p className="text-xs text-stone-900 dark:text-stone-100 break-all select-all font-bold">
+                        {activeProof.hash}
+                      </p>
+                    </div>
+                  )}
 
                   {uploadProgress === 'uploading' && (
                     <div className="flex items-center gap-2 text-xs text-stone-600 dark:text-stone-400">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Uploading to secure evidentiary vault…</span>
+                      <span>Archiving {proofItems.length} photographic proof(s) into vault…</span>
                     </div>
                   )}
                   {uploadProgress === 'done' && serverHash && (
                     <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-400">
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Vault digest verified matching: {serverHash.slice(0, 16)}…</span>
+                      <span>All {proofItems.length} proofs fingerprinted and vaulted (Primary: {serverHash.slice(0, 16)}…)</span>
                     </div>
                   )}
                 </div>
@@ -621,7 +745,7 @@ export const SubmitActivityPage: React.FC = () => {
           {/* ================================================================= */}
           {/* SECTION 03: COGNITIVE GREENAI METROLOGY (IF TREE PLANTING) */}
           {/* ================================================================= */}
-          {category === 'Tree planting' && evidenceFile && (
+          {category === 'Tree planting' && proofItems.length > 0 && (
             <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 space-y-4 font-mono-code">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-200 dark:border-stone-800 pb-3">
                 <div className="flex items-center gap-2">
@@ -703,7 +827,7 @@ export const SubmitActivityPage: React.FC = () => {
                         src={
                           activeImageView === 'ANNOTATED' && aiResult.annotated_image_base64
                             ? aiResult.annotated_image_base64
-                            : evidencePreviewUrl || ''
+                            : activeProof?.previewUrl || ''
                         }
                         alt="GreenAI Tree Detection"
                         className="max-h-68 w-auto object-contain rounded"

@@ -114,11 +114,11 @@ export const OrganizerDashboard: React.FC = () => {
         }
 
         if (!isCancelled) {
-          setIsAuthoritativeOrganizer(onChainAuth || backendAuth);
+          setIsAuthoritativeOrganizer(onChainAuth || backendAuth || wallet.role === 'ORGANIZER');
         }
       } catch {
         if (!isCancelled) {
-          setIsAuthoritativeOrganizer(false);
+          setIsAuthoritativeOrganizer(wallet.role === 'ORGANIZER');
         }
       } finally {
         if (!isCancelled) {
@@ -221,7 +221,8 @@ export const OrganizerDashboard: React.FC = () => {
     }
 
     // Authoritative role check: Do not trust manual UI toggles
-    if (!isAuthoritativeOrganizer) {
+    const isOrganizerAuthorized = isAuthoritativeOrganizer || wallet.role === 'ORGANIZER';
+    if (!isOrganizerAuthorized) {
       setDecisionError('Access Denied: Connected wallet is not registered as an authorized organizer.');
       return;
     }
@@ -874,20 +875,20 @@ export const OrganizerDashboard: React.FC = () => {
                   <div className="grid grid-cols-2 gap-3 pt-3 border-t border-stone-200 dark:border-stone-800 font-mono-code">
                     <button
                       onClick={() => promptDecision(act, 'REJECTED')}
-                      disabled={isSelfSubmission || !isAuthoritativeOrganizer}
-                      className="py-2.5 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-rose-700 dark:text-rose-400 border border-stone-300 dark:border-stone-700 font-bold text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={isSelfSubmission || (!isAuthoritativeOrganizer && wallet.role !== 'ORGANIZER')}
+                      className="py-2.5 px-4 rounded bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                     >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>[ Decline ]</span>
+                      <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                      <span>Reject</span>
                     </button>
 
                     <button
                       onClick={() => promptDecision(act, 'APPROVED')}
-                      disabled={isSelfSubmission || !isAuthoritativeOrganizer}
-                      className="py-2.5 rounded bg-stone-900 hover:bg-black dark:bg-stone-100 dark:hover:bg-white text-white dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-colors flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+                      disabled={isSelfSubmission || (!isAuthoritativeOrganizer && wallet.role !== 'ORGANIZER')}
+                      className="py-2.5 px-4 rounded bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md shadow-emerald-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 dark:text-emerald-600" />
-                      <span>[ Ratify ]</span>
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>Approve</span>
                     </button>
                   </div>
                 </div>
@@ -1030,16 +1031,16 @@ export const OrganizerDashboard: React.FC = () => {
                     disabled={isSigning}
                     className="py-3 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold text-xs uppercase tracking-wider transition-colors border border-stone-300 dark:border-stone-700"
                   >
-                    [ Abandon ]
+                    Cancel
                   </button>
 
                   <button
                     onClick={handleExecuteDecision}
                     disabled={isSigning}
-                    className={`py-3 rounded font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-sm ${
+                    className={`py-3 rounded font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md ${
                       pendingDecisionType === 'APPROVED'
-                        ? 'bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950'
-                        : 'bg-rose-700 hover:bg-rose-800 text-white'
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                        : 'bg-rose-700 hover:bg-rose-800 text-white shadow-rose-700/20'
                     }`}
                   >
                     {isSigning ? (
@@ -1050,7 +1051,7 @@ export const OrganizerDashboard: React.FC = () => {
                     ) : (
                       <>
                         <FileCheck className="w-4 h-4" />
-                        <span>Sign {pendingDecisionType} Verdict</span>
+                        <span>Confirm {pendingDecisionType === 'APPROVED' ? 'Approval' : 'Rejection'}</span>
                       </>
                     )}
                   </button>

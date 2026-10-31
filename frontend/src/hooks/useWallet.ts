@@ -487,7 +487,9 @@ export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ childr
 
   const getActivityById = useCallback(
     (id: string): ActivityRecord | undefined => {
-      return activities.find((a) => a.activity_id === id);
+      if (!id) return undefined;
+      const clean = id.trim().toLowerCase();
+      return activities.find((a) => a.activity_id.trim().toLowerCase() === clean);
     },
     [activities]
   );

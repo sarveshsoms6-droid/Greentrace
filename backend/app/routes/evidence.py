@@ -7,7 +7,7 @@ path traversal protection, and private evidence shielding.
 import os
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, File, HTTPException, UploadFile, status, Header, Query
 from fastapi.responses import FileResponse, JSONResponse
@@ -77,15 +77,12 @@ def validate_image_content(content: bytes, declared_mime: str) -> str:
     )
 
 
-@router.post("", response_model=EvidenceUploadResponse, status_code=status.HTTP_201_CREATED)
-async def upload_evidence(file: UploadFile = File(...)):
-    """
-    Uploads and fingerprints photographic evidence.
-    Calculates server-side SHA-256 hash from exact bytes, detects duplicates,
-    and stores the file in protected off-chain storage.
-    """
-    content = await file.read()
-
+def process_single_evidence_content(
+    filename: Optional[str],
+    declared_type: Optional[str],
+    content: bytes,
+) -> EvidenceUploadResponse:
+    """Validates, fingerprints, stores, and records an individual photographic proof."""
     # 1. Enforce file size limit
     if len(content) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
@@ -94,27 +91,27 @@ async def upload_evidence(file: UploadFile = File(...)):
         )
 
     # 2. Enforce file extension and declared content type
-    file_ext = Path(file.filename or "").suffix.lower()
+    file_ext = Path(filename or "").suffix.lower()
     if file_ext and file_ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported file extension '{file_ext}'. Allowed extensions are: {', '.join(sorted(ALLOWED_EXTENSIONS))}.",
         )
 
-    declared_type = (file.content_type or "").lower()
-    if declared_type not in ALLOWED_MIME_TYPES and not any(
-        declared_type.startswith(t) for t in ["image/jpeg", "image/png", "image/webp", "image/jpg"]
+    d_type = (declared_type or "").lower()
+    if d_type not in ALLOWED_MIME_TYPES and not any(
+        d_type.startswith(t) for t in ["image/jpeg", "image/png", "image/webp", "image/jpg"]
     ):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Unsupported file type. Only JPEG, PNG, and WebP images are permitted.",
         )
 
-    validated_mime = validate_image_content(content, declared_type)
+    validated_mime = validate_image_content(content, d_type)
 
     # 3. Calculate server-side SHA-256 fingerprint from actual bytes
     evidence_hash = calculate_sha256(content)
-    clean_name = sanitize_filename(file.filename)
+    clean_name = sanitize_filename(filename)
 
     # 4. Check for duplicates against database
     is_dup, existing_activity_id = check_duplicate_hash(evidence_hash)
@@ -155,6 +152,43 @@ async def upload_evidence(file: UploadFile = File(...)):
         existing_activity_id=existing_activity_id,
         message=msg,
     )
+
+
+@router.post("", response_model=EvidenceUploadResponse, status_code=status.HTTP_201_CREATED)
+async def upload_evidence(file: UploadFile = File(...)):
+    """
+    Uploads and fingerprints photographic evidence.
+    Calculates server-side SHA-256 hash from exact bytes, detects duplicates,
+    and stores the file in protected off-chain storage.
+    """
+    content = await file.read()
+    return process_single_evidence_content(file.filename, file.content_type, content)
+
+
+@router.post("/batch", response_model=List[EvidenceUploadResponse], status_code=status.HTTP_201_CREATED)
+async def upload_evidence_batch(files: List[UploadFile] = File(...)):
+    """
+    Batch uploads up to 25 photographic evidence files.
+    Validates each file, computes SHA-256 fingerprint, checks duplicates,
+    and stores each in protected evidence storage.
+    """
+    if len(files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided in batch upload.",
+        )
+    if len(files) > 25:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Exceeded maximum batch limit of 25 files. Received {len(files)} files.",
+        )
+
+    results = []
+    for f in files:
+        content = await f.read()
+        res = process_single_evidence_content(f.filename, f.content_type, content)
+        results.append(res)
+    return results
 
 
 @router.get("/{evidence_hash}/duplicate-check", response_model=DuplicateCheckResponse)

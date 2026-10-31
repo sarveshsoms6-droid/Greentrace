@@ -425,3 +425,67 @@ class TestHealthEndpoint:
         data = response.json()
         assert data["status"] == "healthy"
         assert "Shadownet" in data["supported_network"]
+
+
+# ──────────────────────────────────────────────────
+# Batch Upload (up to 25 files) & ID Resolution Tests
+# ──────────────────────────────────────────────────
+
+class TestEvidenceBatchUpload:
+    def test_upload_evidence_batch_success(self, client):
+        """Batch upload supports multiple photos (up to 25) with individual SHA-256 digests."""
+        files = [
+            ("files", (f"img_{i}.png", io.BytesIO(minimal_png() + f"var_{i}".encode()), "image/png"))
+            for i in range(3)
+        ]
+        response = client.post("/api/evidence/batch", files=files)
+        assert response.status_code == 201
+        data = response.json()
+        assert len(data) == 3
+        for item in data:
+            assert "evidence_hash" in item
+            assert len(item["evidence_hash"]) == 64
+            assert item["is_duplicate"] is False
+
+    def test_upload_evidence_batch_limit_exceeded(self, client):
+        """Batch upload exceeding 25 images is rejected with 400 Bad Request."""
+        files = [
+            ("files", (f"img_{i}.png", io.BytesIO(minimal_png() + f"var_{i}".encode()), "image/png"))
+            for i in range(26)
+        ]
+        response = client.post("/api/evidence/batch", files=files)
+        assert response.status_code == 400
+        assert "25 files" in response.json()["detail"]
+
+
+class TestActivityResolution:
+    def test_activity_lookup_case_insensitive_and_trimmed(self, client):
+        """Chronicle archive lookups resolve cleanly regardless of whitespace or casing."""
+        from app.database import create_or_update_activity, get_activity_by_id
+
+        act_id = "act-2026-test-alpha"
+        create_or_update_activity(
+            activity_id=act_id,
+            submitter_address="tz1StudentWalletAddressAlpha",
+            category="Tree planting",
+            quantity=15.0,
+            unit="trees",
+            description="North quad planting",
+            evidence_hash="a" * 64,
+        )
+
+        # Lookup with uppercase
+        res_upper = get_activity_by_id("ACT-2026-TEST-ALPHA")
+        assert res_upper is not None
+        assert res_upper["activity_id"] == act_id
+
+        # Lookup with spaces
+        res_spaces = get_activity_by_id("   act-2026-test-alpha   ")
+        assert res_spaces is not None
+        assert res_spaces["activity_id"] == act_id
+
+        # Via API route
+        api_res = client.get("/api/activities/ACT-2026-TEST-ALPHA")
+        assert api_res.status_code == 200
+        assert api_res.json()["activity_id"] == act_id
+

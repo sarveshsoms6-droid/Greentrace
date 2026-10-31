@@ -53,12 +53,34 @@ def is_postgres_configured() -> bool:
     )
 
 _pg_pool: Optional[Any] = None
+_pg_failed: bool = False
+
+
+def is_postgres_configured() -> bool:
+    """Checks whether a valid PostgreSQL / Supabase connection string is provided."""
+    global _pg_failed
+    if _pg_failed or not HAVE_PSYCOPG2:
+        return False
+    # If DATABASE_PATH has been monkeypatched or explicitly pointed to a sqlite file, use sqlite
+    active_path = str(DATABASE_PATH)
+    if active_path.endswith(".db") or active_path.endswith(".sqlite") or "sqlite" in active_path:
+        return False
+    url = (os.getenv("DATABASE_URL") or active_path or "").strip()
+    return (
+        (url.startswith("postgresql://") or url.startswith("postgres://"))
+        and "[YOUR-" not in url
+    )
+
 
 def get_pg_pool():
-    """Initializes or returns the psycopg2 ThreadedConnectionPool."""
-    global _pg_pool
+    """Initializes or returns the psycopg2 ThreadedConnectionPool with graceful fallback."""
+    global _pg_pool, _pg_failed
+    if _pg_failed:
+        return None
     if _pg_pool is None and is_postgres_configured():
         dsn = os.getenv("DATABASE_URL")
+        if not dsn:
+            return None
         # Ensure sslmode is present for Supabase
         if "sslmode=" not in dsn:
             sep = "&" if "?" in dsn else "?"
@@ -71,8 +93,10 @@ def get_pg_pool():
             )
             logger.info("Connected to Supabase PostgreSQL connection pool.")
         except Exception as e:
-            logger.error(f"Failed to initialize PostgreSQL connection pool: {e}")
-            raise
+            logger.warning(f"Could not connect to Supabase PostgreSQL ({e}). Gracefully falling back to local SQLite.")
+            _pg_failed = True
+            _pg_pool = None
+            return None
     return _pg_pool
 
 
@@ -116,7 +140,9 @@ def get_db_path() -> str:
     path = os.getenv("DATABASE_PATH", DATABASE_PATH)
     if path.startswith("sqlite:///"):
         path = path.replace("sqlite:///", "")
-    
+    if path.startswith("postgresql://") or path.startswith("postgres://"):
+        path = "greentrace.db"
+
     # If the relative path does not exist in CWD, look for it in backend or root folder
     if not os.path.isabs(path) and not os.path.exists(path):
         root_candidate = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", path))
@@ -236,8 +262,8 @@ def get_db_connection() -> Generator[Any, None, None]:
     Connects to Supabase PostgreSQL when DATABASE_URL is configured;
     falls back to SQLite with WAL mode for local/offline testing.
     """
-    if is_postgres_configured():
-        pool = get_pg_pool()
+    pool = get_pg_pool() if is_postgres_configured() else None
+    if pool is not None:
         raw_conn = pool.getconn()
         wrapped_conn = PostgresConnectionWrapper(raw_conn)
         try:
@@ -270,7 +296,8 @@ def get_db_connection() -> Generator[Any, None, None]:
 
 def init_db():
     """Initializes database schema with unique constraints, indexes, and tables."""
-    if is_postgres_configured():
+    pool = get_pg_pool() if is_postgres_configured() else None
+    if pool is not None:
         with get_db_connection() as conn:
             conn.execute("""
             CREATE TABLE IF NOT EXISTS evidence (
@@ -762,11 +789,12 @@ def get_activity_statistics(submitter_address: Optional[str] = None) -> dict:
 
 
 def get_activity_by_id(activity_id: str) -> Optional[dict]:
-    """Retrieves a single activity record by ID."""
+    """Retrieves a single activity record by ID (case-insensitive and trimmed)."""
+    clean_id = (activity_id or "").strip()
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM activities WHERE activity_id = ? LIMIT 1;",
-            (activity_id,),
+            "SELECT * FROM activities WHERE LOWER(TRIM(activity_id)) = LOWER(?) LIMIT 1;",
+            (clean_id,),
         )
         row = cursor.fetchone()
         if row:
@@ -793,16 +821,18 @@ def record_activity_decision(
     if decision not in {"APPROVED", "REJECTED"}:
         raise ValueError("Invalid decision. Must be APPROVED or REJECTED.")
 
+    clean_id = (activity_id or "").strip()
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM activities WHERE activity_id = ? LIMIT 1;",
-            (activity_id,),
+            "SELECT * FROM activities WHERE LOWER(TRIM(activity_id)) = LOWER(?) LIMIT 1;",
+            (clean_id,),
         )
         row = cursor.fetchone()
         if not row:
             raise KeyError("ACTIVITY_NOT_FOUND")
 
         activity = dict(row)
+        actual_id = activity["activity_id"]
 
         if activity["status_cache"] != "SUBMITTED":
             raise ValueError(f"ACTIVITY_NOT_PENDING: Record is already {activity['status_cache']}.")
@@ -834,7 +864,7 @@ def record_activity_decision(
                 now_iso if is_approval else None,
                 now_iso if not is_approval else None,
                 rejection_reason if not is_approval else None,
-                activity_id,
+                actual_id,
             ),
         )
 
@@ -850,12 +880,12 @@ def record_activity_decision(
                     confirmation_status='CONFIRMED',
                     confirmed_at=excluded.confirmed_at;
                 """,
-                (activity_id, approval_tx_hash, tx_type, approver_address, now_iso, now_iso),
+                (actual_id, approval_tx_hash, tx_type, approver_address, now_iso, now_iso),
             )
 
         cursor = conn.execute(
             "SELECT * FROM activities WHERE activity_id = ? LIMIT 1;",
-            (activity_id,),
+            (actual_id,),
         )
         return dict(cursor.fetchone())
 
@@ -918,10 +948,11 @@ def record_transaction(
 
 def get_transactions_for_activity(activity_id: str) -> list[dict]:
     """Retrieves all tracked transactions for a given activity."""
+    clean_id = (activity_id or "").strip()
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM transactions WHERE activity_id = ? ORDER BY id ASC;",
-            (activity_id,),
+            "SELECT * FROM transactions WHERE LOWER(TRIM(activity_id)) = LOWER(?) ORDER BY id ASC;",
+            (clean_id,),
         )
         return [dict(row) for row in cursor.fetchall()]
 
@@ -989,16 +1020,18 @@ def reconcile_activity_status(
     """
     status_upper = on_chain_status.upper()
     now_iso = confirmed_at or datetime.now(timezone.utc).isoformat()
+    clean_id = (activity_id or "").strip()
 
     with get_db_connection() as conn:
         cursor = conn.execute(
-            "SELECT * FROM activities WHERE activity_id = ? LIMIT 1;",
-            (activity_id,),
+            "SELECT * FROM activities WHERE LOWER(TRIM(activity_id)) = LOWER(?) LIMIT 1;",
+            (clean_id,),
         )
         row = cursor.fetchone()
         if not row:
             raise KeyError(f"Activity '{activity_id}' not found in database.")
 
+        actual_id = row["activity_id"]
         is_approved = status_upper == "APPROVED"
         is_rejected = status_upper == "REJECTED"
 
@@ -1025,13 +1058,13 @@ def reconcile_activity_status(
                 is_rejected,
                 now_iso,
                 now_iso,
-                activity_id,
+                actual_id,
             ),
         )
 
         cur = conn.execute(
             "SELECT * FROM activities WHERE activity_id = ? LIMIT 1;",
-            (activity_id,),
+            (actual_id,),
         )
         return dict(cur.fetchone())
 
@@ -1163,7 +1196,8 @@ def get_activity_history(activity_id: str) -> Optional[dict]:
     if not activity:
         return None
 
-    transactions = get_transactions_for_activity(activity_id)
+    actual_id = activity["activity_id"]
+    transactions = get_transactions_for_activity(actual_id)
 
     # Compile chronological events
     events = []

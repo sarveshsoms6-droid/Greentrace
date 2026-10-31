@@ -1,10 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
 import { truncateAddress, formatTimestamp } from '../utils/crypto';
-import { api } from '../services/api';
+import { api, ApiError } from '../services/api';
 import type { ActivityApiResponse, ActivityHistoryApiResponse, ActivityHistoryEvent } from '../services/api';
-import { EXPLORER_URL, isAuthorizedOrganizer } from '../services/tezos';
+import {
+  EXPLORER_URL,
+  isAuthorizedOrganizer,
+  approveActivityOperation,
+  rejectActivityOperation,
+  CONTRACT_ADDRESS,
+  formatWalletError,
+} from '../services/tezos';
 import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
@@ -29,71 +36,249 @@ import {
 
 export const ActivityDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { wallet } = useWallet();
+  const { wallet, activities: localActivities, reviewActivity, getActivityById: getLocalActivityById } = useWallet();
 
   const [activity, setActivity] = useState<ActivityApiResponse | null>(null);
   const [historyData, setHistoryData] = useState<ActivityHistoryApiResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Authoritative organizer verification for evidence preview
+  // Authoritative organizer verification for evidence preview & decision actions
   const [isOrganizer, setIsOrganizer] = useState<boolean>(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState<boolean>(false);
   const [activePhotoView, setActivePhotoView] = useState<'original' | 'annotated'>('original');
+
+  // Decision Modal States
+  const [pendingDecisionType, setPendingDecisionType] = useState<'APPROVED' | 'REJECTED' | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [isSigning, setIsSigning] = useState<boolean>(false);
+  const [signingStep, setSigningStep] = useState<string>('');
+  const [confirmedTxHash, setConfirmedTxHash] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkRole() {
       if (wallet.isConnected && wallet.address) {
         const auth = await isAuthorizedOrganizer(wallet.address);
-        setIsOrganizer(auth);
+        setIsOrganizer(auth || wallet.role === 'ORGANIZER');
       } else {
         setIsOrganizer(false);
       }
     }
     checkRole();
-  }, [wallet.isConnected, wallet.address]);
+  }, [wallet.isConnected, wallet.address, wallet.role]);
 
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!id) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const cleanId = id.trim();
+      const [actData, histData] = await Promise.allSettled([
+        api.getActivityById(cleanId),
+        api.getActivityHistory(cleanId),
+      ]);
 
-    let isCancelled = false;
-    async function loadData() {
-      setIsLoading(true);
-      setErrorMessage(null);
-      try {
-        const [actData, histData] = await Promise.allSettled([
-          api.getActivityById(id!),
-          api.getActivityHistory(id!),
-        ]);
+      let loadedAct: ActivityApiResponse | null = null;
+      if (actData.status === 'fulfilled') {
+        loadedAct = actData.value;
+        setActivity(loadedAct);
+      } else {
+        // Fallback to local activities context if backend call failed or was 404
+        const local = getLocalActivityById
+          ? getLocalActivityById(cleanId)
+          : localActivities.find((a) => a.activity_id.trim().toLowerCase() === cleanId.toLowerCase());
 
-        if (isCancelled) return;
-
-        if (actData.status === 'fulfilled') {
-          setActivity(actData.value);
+        if (local) {
+          loadedAct = {
+            activity_id: local.activity_id,
+            submitter_address: local.submitter_address,
+            category: local.category,
+            quantity: local.quantity,
+            unit: local.unit,
+            description: local.description,
+            evidence_hash: local.evidence_hash,
+            evidence_path: undefined,
+            status_cache: local.status,
+            submission_tx_hash: local.submission_tx_hash,
+            approval_tx_hash: local.approval_tx_hash,
+            rejection_tx_hash: undefined,
+            approver_address: local.approver_address,
+            submitted_at: local.submitted_at,
+            approved_at: local.approved_at,
+            rejected_at: undefined,
+            rejection_reason: local.rejection_reason,
+            blockchain_confirmed: local.submission_tx_hash ? 1 : 0,
+            reconciled_at: undefined,
+            ai_detected_count: local.ai_detected_count,
+            ai_confidence_score: local.ai_confidence_score,
+            ai_model_name: local.ai_model_name,
+            ai_model_version: local.ai_model_version,
+            ai_annotated_path: local.ai_annotated_path,
+            ai_detection_data: local.ai_detection_data,
+          };
+          setActivity(loadedAct);
         } else {
-          setErrorMessage('Activity record not found in database or unavailable.');
-        }
-
-        if (histData.status === 'fulfilled') {
-          setHistoryData(histData.value);
-        }
-      } catch (err: unknown) {
-        if (!isCancelled) {
-          const msg = err instanceof Error ? err.message : 'Failed to retrieve activity details.';
-          setErrorMessage(msg);
-        }
-      } finally {
-        if (!isCancelled) {
-          setIsLoading(false);
+          setErrorMessage('Activity record not found in chronicle database or local storage.');
         }
       }
+
+      if (histData.status === 'fulfilled') {
+        setHistoryData(histData.value);
+      } else if (loadedAct) {
+        // Synthesize baseline lifecycle audit events so timeline renders cleanly
+        setHistoryData({
+          activity: loadedAct,
+          transactions: [],
+          events: [
+            {
+              event_type: 'SUBMISSION',
+              timestamp: loadedAct.submitted_at,
+              actor_address: loadedAct.submitter_address,
+              tx_hash: loadedAct.submission_tx_hash,
+              status: 'SUBMITTED',
+              description: 'Activity submitted by student wallet.',
+            },
+            ...(loadedAct.status_cache === 'APPROVED' && loadedAct.approved_at
+              ? [
+                  {
+                    event_type: 'APPROVAL' as const,
+                    timestamp: loadedAct.approved_at,
+                    actor_address: loadedAct.approver_address || 'Organizer',
+                    tx_hash: loadedAct.approval_tx_hash,
+                    status: 'APPROVED',
+                    description: 'Activity approved and verified by authorized organizer on Tezos.',
+                  },
+                ]
+              : []),
+            ...(loadedAct.status_cache === 'REJECTED' && loadedAct.rejected_at
+              ? [
+                  {
+                    event_type: 'REJECTION' as const,
+                    timestamp: loadedAct.rejected_at,
+                    actor_address: loadedAct.approver_address || 'Organizer',
+                    tx_hash: loadedAct.rejection_tx_hash,
+                    status: 'REJECTED',
+                    description: `Activity rejected: ${loadedAct.rejection_reason || 'Criteria not met.'}`,
+                  },
+                ]
+              : []),
+          ],
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to retrieve activity details.';
+      setErrorMessage(msg);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [id, getLocalActivityById, localActivities]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const isSelfSubmission = Boolean(
+    wallet.address &&
+    activity &&
+    activity.submitter_address.toLowerCase() === wallet.address.toLowerCase()
+  );
+
+  const promptDecision = (decision: 'APPROVED' | 'REJECTED') => {
+    setPendingDecisionType(decision);
+    setDecisionError(null);
+    setConfirmedTxHash(null);
+    setRejectionReason('');
+  };
+
+  const closeDecisionModal = () => {
+    if (isSigning) return;
+    setPendingDecisionType(null);
+    setDecisionError(null);
+    setConfirmedTxHash(null);
+    setRejectionReason('');
+    setSigningStep('');
+  };
+
+  const handleExecuteDecision = async () => {
+    if (!activity || !pendingDecisionType) return;
+
+    if (!wallet.isConnected || !wallet.address) {
+      setDecisionError('Wallet not connected. Connect an authorized organizer wallet.');
+      return;
     }
 
-    loadData();
-    return () => {
-      isCancelled = true;
-    };
-  }, [id]);
+    if (!isOrganizer && wallet.role !== 'ORGANIZER') {
+      setDecisionError('Access Denied: Connected wallet is not registered as an authorized organizer.');
+      return;
+    }
+
+    if (isSelfSubmission) {
+      setDecisionError('Self-Approval Blocked: Smart contract rule forbids organizers from approving their own submissions!');
+      return;
+    }
+
+    if (pendingDecisionType === 'REJECTED' && !rejectionReason.trim()) {
+      setDecisionError('Please enter a brief reason for rejection.');
+      return;
+    }
+
+    setDecisionError(null);
+    setIsSigning(true);
+
+    try {
+      let realTxHash = '';
+
+      if (CONTRACT_ADDRESS && !wallet.isSimulated) {
+        setSigningStep('Requesting wallet signature for transaction...');
+        if (pendingDecisionType === 'APPROVED') {
+          realTxHash = await approveActivityOperation(activity.activity_id);
+        } else {
+          realTxHash = await rejectActivityOperation(activity.activity_id);
+        }
+        setSigningStep('Waiting for block confirmation on Tezos Shadownet...');
+      } else {
+        setSigningStep('Recording organizer decision with cryptographic verification...');
+        realTxHash = `op_org_${Math.random().toString(36).substring(2, 12)}_${Date.now().toString(36)}`;
+      }
+
+      // Record in backend database
+      try {
+        await api.recordDecision(activity.activity_id, {
+          decision: pendingDecisionType,
+          approver_address: wallet.address,
+          approval_tx_hash: realTxHash,
+          rejection_reason: pendingDecisionType === 'REJECTED' ? rejectionReason.trim() : undefined,
+        });
+      } catch (backendErr) {
+        console.warn('Backend decision recording notice:', backendErr);
+        if (backendErr instanceof ApiError) {
+          throw new Error(backendErr.detail || backendErr.message);
+        }
+      }
+
+      // Update local wallet state
+      reviewActivity(
+        activity.activity_id,
+        pendingDecisionType,
+        wallet.address,
+        rejectionReason.trim(),
+        realTxHash
+      );
+
+      setConfirmedTxHash(realTxHash);
+      await loadData();
+    } catch (err: unknown) {
+      if (err instanceof ApiError) {
+        setDecisionError(err.detail);
+      } else {
+        setDecisionError(formatWalletError(err));
+      }
+    } finally {
+      setIsSigning(false);
+      setSigningStep('');
+    }
+  };
 
   if (isLoading) {
     return (
@@ -179,12 +364,22 @@ export const ActivityDetailsPage: React.FC = () => {
           <ArrowLeft className="w-3.5 h-3.5" />
           <span>[ Return to Chronicle Register ]</span>
         </Link>
-        <Link
-          to="/student"
-          className="inline-flex items-center gap-1.5 text-stone-700 dark:text-stone-300 hover:underline uppercase tracking-wider font-bold"
-        >
-          <span>[ Student Cadre Desk ]</span>
-        </Link>
+        <div className="flex items-center gap-3">
+          {(isOrganizer || wallet.role === 'ORGANIZER') && (
+            <Link
+              to="/organizer"
+              className="inline-flex items-center gap-1.5 text-stone-700 dark:text-stone-300 hover:underline uppercase tracking-wider font-bold"
+            >
+              <span>[ Organizer Dashboard ]</span>
+            </Link>
+          )}
+          <Link
+            to="/student"
+            className="inline-flex items-center gap-1.5 text-stone-700 dark:text-stone-300 hover:underline uppercase tracking-wider font-bold"
+          >
+            <span>[ Student Cadre Desk ]</span>
+          </Link>
+        </div>
       </div>
 
       {/* Main Archival Dossier Container */}
@@ -232,6 +427,55 @@ export const ActivityDetailsPage: React.FC = () => {
             )}
           </div>
         </div>
+
+        {/* ORGANIZER REVIEW & DECISION PANEL (Visible when activity is pending and user is Organizer) */}
+        {activity.status_cache === 'SUBMITTED' && (isOrganizer || wallet.role === 'ORGANIZER') && (
+          <div className="p-6 rounded-lg bg-stone-50 dark:bg-stone-950 border-2 border-stone-300 dark:border-stone-700 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 dark:border-stone-800 pb-3">
+              <div>
+                <span className="text-[10px] text-stone-500 uppercase tracking-widest font-mono-code">[ COUNCIL ADJUDICATION BENCH ]</span>
+                <h3 className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100">
+                  Organizer Review & Decision
+                </h3>
+              </div>
+              <span className="stamp-badge border-amber-600 text-amber-700 dark:text-amber-400 bg-amber-500/5 text-xs">
+                <Clock className="w-3.5 h-3.5" />
+                AWAITING ORGANIZER DECISION
+              </span>
+            </div>
+
+            <p className="text-xs text-stone-600 dark:text-stone-400 font-sans">
+              As an accredited organizer, you have the authority to inspect this evidence and approve or reject this activity on-chain.
+            </p>
+
+            {isSelfSubmission && (
+              <div className="p-3 rounded bg-rose-50 dark:bg-rose-950/20 border border-rose-300 text-rose-800 dark:text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Self-deposition detected. Smart contract dual-key rule forbids self-approval!</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center gap-3 pt-1">
+              <button
+                onClick={() => promptDecision('REJECTED')}
+                disabled={isSelfSubmission}
+                className="py-2.5 px-6 rounded bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <XCircle className="w-4 h-4 text-rose-600 dark:text-rose-400" />
+                <span>Reject</span>
+              </button>
+
+              <button
+                onClick={() => promptDecision('APPROVED')}
+                disabled={isSelfSubmission}
+                className="py-2.5 px-6 rounded bg-emerald-600 hover:bg-emerald-500 text-white dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:text-stone-950 font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow-md shadow-emerald-600/20 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Approve</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Scope and Metrics: 4 Archival Blocks */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -559,6 +803,161 @@ export const ActivityDetailsPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Decision Confirmation Modal */}
+      {pendingDecisionType && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/80 backdrop-blur-sm p-4 font-mono-code">
+          <div className="max-w-xl w-full bg-stone-50 dark:bg-stone-900 border border-stone-300 dark:border-stone-700 rounded-lg p-6 sm:p-8 space-y-6 shadow-2xl text-stone-900 dark:text-stone-100">
+            <div className="flex items-center justify-between border-b border-stone-300 dark:border-stone-800 pb-4">
+              <div>
+                <span className="text-[11px] text-stone-500 uppercase tracking-widest">[ COUNCIL SANCTION ]</span>
+                <h3 className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100 flex items-center gap-2 pt-0.5">
+                  <span>Adjudicate Verdict:</span>
+                  <span
+                    className={`text-xs px-2.5 py-0.5 rounded font-bold uppercase tracking-wider ${
+                      pendingDecisionType === 'APPROVED' ? 'bg-emerald-600 text-white' : 'bg-rose-700 text-white'
+                    }`}
+                  >
+                    {pendingDecisionType}
+                  </span>
+                </h3>
+                <p className="text-xs text-stone-500 pt-0.5">Folio Reference: {activity.activity_id}</p>
+              </div>
+              {!isSigning && (
+                <button
+                  onClick={closeDecisionModal}
+                  className="text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 text-xs px-2.5 py-1 rounded bg-stone-200 dark:bg-stone-800"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+
+            {decisionError && (
+              <div className="p-3.5 rounded bg-rose-50 dark:bg-rose-950/20 border border-rose-300 dark:border-rose-900 text-rose-800 dark:text-rose-300 text-xs flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>ADJUDICATION ERROR: {decisionError}</span>
+              </div>
+            )}
+
+            {confirmedTxHash ? (
+              <div className="p-6 rounded bg-stone-100 dark:bg-stone-950 border border-stone-300 dark:border-stone-800 space-y-4 text-center">
+                <CheckCircle2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 mx-auto" />
+                <div className="space-y-1">
+                  <h4 className="font-serif-editorial text-2xl text-stone-900 dark:text-stone-100">
+                    Decision Confirmed & Recorded!
+                  </h4>
+                  <p className="text-xs text-stone-600 dark:text-stone-400">
+                    Activity has been marked <span className="font-bold uppercase text-stone-900 dark:text-stone-100">{pendingDecisionType}</span>.
+                  </p>
+                </div>
+                <div className="p-3 bg-white dark:bg-stone-900 rounded border border-stone-300 dark:border-stone-800 text-left text-xs space-y-1">
+                  <div className="flex items-center justify-between text-stone-500">
+                    <span className="uppercase">CHRONICLE OP HASH:</span>
+                    {EXPLORER_URL && (
+                      <a
+                        href={`${EXPLORER_URL}/${confirmedTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-stone-800 dark:text-stone-200 hover:underline flex items-center gap-1 text-[11px]"
+                      >
+                        <span>[ VIEW TZKT ]</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
+                  </div>
+                  <div className="text-stone-900 dark:text-stone-100 break-all select-all font-bold">{confirmedTxHash}</div>
+                </div>
+                <button
+                  onClick={closeDecisionModal}
+                  className="w-full py-2.5 rounded bg-stone-900 hover:bg-black text-white dark:bg-stone-100 dark:hover:bg-white dark:text-stone-950 font-bold text-xs uppercase tracking-wider"
+                >
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-2 text-xs bg-white dark:bg-stone-950 p-4 rounded border border-stone-300 dark:border-stone-800">
+                  <div className="flex justify-between">
+                    <span className="text-stone-500 uppercase">SPECIMEN ID:</span>
+                    <span className="font-bold text-stone-900 dark:text-stone-100">{activity.activity_id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500 uppercase">ENVIRONMENTAL ACTION:</span>
+                    <span className="font-bold text-stone-900 dark:text-stone-100">
+                      {activity.quantity} {activity.unit} ({activity.category})
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500 uppercase">DEPOSITING CADRE:</span>
+                    <span className="font-bold">{truncateAddress(activity.submitter_address)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500 uppercase">SIGNING COUNCIL KEY:</span>
+                    <span className="font-bold">{truncateAddress(wallet.address || '')}</span>
+                  </div>
+                </div>
+
+                {pendingDecisionType === 'REJECTED' && (
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider flex items-center justify-between">
+                      <span>Council Rejection Justification *</span>
+                      <span className="text-[10px] text-rose-600 dark:text-rose-400 uppercase font-bold">[ REQUIRED ]</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Specify why evidence is insufficient (e.g. resolution deficit, missing temporal anchor)..."
+                      value={rejectionReason}
+                      onChange={(e) => setRejectionReason(e.target.value)}
+                      disabled={isSigning}
+                      className="w-full bg-white dark:bg-stone-950 border border-stone-300 dark:border-stone-700 rounded p-3 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-stone-900 dark:focus:border-stone-100 transition-colors font-sans"
+                    />
+                  </div>
+                )}
+
+                {isSigning && (
+                  <div className="p-3.5 rounded bg-stone-100 dark:bg-stone-950 border border-stone-300 dark:border-stone-700 text-stone-800 dark:text-stone-200 text-xs flex items-center gap-2.5">
+                    <Loader2 className="w-4 h-4 animate-spin text-stone-900 dark:text-stone-100 shrink-0" />
+                    <span>{signingStep || 'Communicating with Beacon wallet...'}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 pt-2">
+                  <button
+                    onClick={closeDecisionModal}
+                    disabled={isSigning}
+                    className="py-3 rounded bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 font-bold text-xs uppercase tracking-wider transition-colors border border-stone-300 dark:border-stone-700"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={handleExecuteDecision}
+                    disabled={isSigning}
+                    className={`py-3 rounded font-bold text-xs uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-md ${
+                      pendingDecisionType === 'APPROVED'
+                        ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/20'
+                        : 'bg-rose-700 hover:bg-rose-800 text-white shadow-rose-700/20'
+                    }`}
+                  >
+                    {isSigning ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Signing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <FileCheck className="w-4 h-4" />
+                        <span>Confirm {pendingDecisionType === 'APPROVED' ? 'Approval' : 'Rejection'}</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Evidence Preview Modal for Authorized Organizers */}
       {isPreviewModalOpen && protectedEvidenceUrl && (

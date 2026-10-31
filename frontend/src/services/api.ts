@@ -347,6 +347,42 @@ export const api = {
     }
   },
 
+  async uploadEvidenceBatch(files: File[]): Promise<EvidenceUploadResponse[]> {
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s for batch upload
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/evidence/batch`, {
+        method: 'POST',
+        body: formData,
+        signal: controller.signal,
+        headers: { Accept: 'application/json' },
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) {
+        let detail = res.statusText;
+        try {
+          const errJson = await res.json();
+          detail = errJson.detail || errJson.message || detail;
+        } catch {
+          // Use statusText if body is not JSON
+        }
+        throw new ApiError(res.status, detail);
+      }
+
+      return await res.json() as EvidenceUploadResponse[];
+    } catch (err: unknown) {
+      clearTimeout(timeoutId);
+      if (err instanceof ApiError) throw err;
+      const message = err instanceof Error ? err.message : 'Network request failed';
+      throw new ApiError(0, message);
+    }
+  },
+
   async checkDuplicate(evidenceHash: string): Promise<DuplicateCheckResponse> {
     return fetchJson<DuplicateCheckResponse>(
       `${API_BASE_URL}/api/evidence/${encodeURIComponent(evidenceHash)}/duplicate-check`
